@@ -1,0 +1,35 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "config/app_config.c"
+        "system/app_context.c"
+        "system/node_state.c"
+        "drivers/p4_camera.c"
+        "drivers/sdcard.c"
+        "vision/roi_tracker.c"
+        "acquisition/acq_manager.c"
+        "acquisition/camera_capture_task.c"
+        "acquisition/sdcard_write_task.c"
+        "storage/csv_writer.c"
+    INCLUDE_DIRS
+        "."
+        "board"
+        "config"
+        "system"
+        "drivers"
+        "vision"
+        "acquisition"
+        "storage"
+    REQUIRES
+        esp_timer
+        heap
+        esp_driver_cam
+        esp_driver_isp
+        esp_driver_sdmmc
+        driver
+        esp_hw_support
+        espressif__esp_cam_sensor
+        espressif__esp_sccb_intf
+        sdmmc
+        fatfs
+)

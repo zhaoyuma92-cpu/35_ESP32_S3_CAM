@@ -1,0 +1,32 @@
+CONFIG_IDF_TARGET="esp32p4"
+# Real OV5647 MIPI-CSI camera backend (disable fake camera)
+CONFIG_DISP_FAKE_CAMERA=n
+
+# OV5647 sensor driver — must be explicitly enabled (default n in component)
+CONFIG_CAMERA_OV5647=y
+CONFIG_CAMERA_OV5647_AUTO_DETECT_MIPI_INTERFACE_SENSOR=y
+CONFIG_CAMERA_OV5647_MIPI_RAW8_800X640_50FPS=y
+CONFIG_CAMERA_OV5647_MIPI_DEFAULT_FMT_RAW8_800X640_50FPS=y
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+
+# Keep the readable CSV name /sdcard/displacement.csv working on FATFS.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FREERTOS_HZ=1000
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# Flash: actual chip is 16MB; keep 40MHz for chip rev v1.3 compatibility
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
+
+# Chip revision: this board has ESP32-P4 rev v1.3 (pre-production silicon).
+# Rev <3.0 and >=3.0 are mutually exclusive in IDF v5.5 -- must select the <v3 path.
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_100=y
+
+# PSRAM: HEX mode at 80MHz (conservative speed for v1.x silicon)
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# Enable verbose log level at compile time so esp_log_level_set(VERBOSE) works
+CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE=y

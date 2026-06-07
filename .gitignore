@@ -1,0 +1,13 @@
+build/
+managed_components/
+.vscode/
+.devcontainer/
+sdkconfig
+sdkconfig.old
+build*.txt
+monitor_*.txt
+*.log
+*.bin
+*.elf
+*.map
+.gitdir/

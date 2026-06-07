@@ -1,0 +1,38 @@
+menu "Four-target displacement acquisition"
+
+config DISP_FAKE_CAMERA
+    bool "Use fake camera backend"
+    default y
+    help
+        Generate synthetic grayscale frames for pipeline testing. Disable this
+        when the ESP32-P4 MIPI-CSI OV5647 backend is implemented.
+
+config DISP_FAKE_FRAME_WIDTH
+    int "Fake camera frame width"
+    default 1280
+    depends on DISP_FAKE_CAMERA
+    help
+        Width of the synthetic frame. Requires PSRAM for full 1280x960
+        (1228800 bytes). Set to 320 for internal-RAM-only testing.
+
+config DISP_FAKE_FRAME_HEIGHT
+    int "Fake camera frame height"
+    default 960
+    depends on DISP_FAKE_CAMERA
+    help
+        Height of the synthetic frame.
+
+config DISP_AUTOSTART
+    bool "Start acquisition automatically at boot"
+    default y
+    help
+        Useful for early bring-up before HTTP/master control is added.
+
+config DISP_OUTPUT_PATH
+    string "CSV output path"
+    default "/sdcard/displacement.csv"
+    help
+        Path used by the CSV writer. If the filesystem is not mounted yet, the
+        writer logs a warning and the pipeline still runs.
+
+endmenu
