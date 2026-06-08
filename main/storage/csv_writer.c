@@ -28,7 +28,7 @@ static void fprint_q8(FILE *f, int32_t q8)
 
 static void write_header(FILE *f)
 {
-    fprintf(f, "frame_index,t_us,dt_us,process_us,valid_mask");
+    fprintf(f, "frame_index,t_us,dt_us,capture_wait_us,process_us,batch_wait_us,dropped_frames,valid_mask");
     for (int i = 0; i < APP_TARGET_COUNT; i++) {
         fprintf(f,
                 ",t%d_valid,t%d_cx_px,t%d_cy_px,t%d_dx_px,t%d_dy_px"
@@ -59,9 +59,11 @@ void csv_writer_write_sample(csv_writer_t *writer, const displacement_sample_t *
     }
 
     FILE *f = writer->file;
-    fprintf(f, "%" PRIu32 ",%" PRId64 ",%" PRId64 ",%" PRIu32 ",%u",
+    fprintf(f, "%" PRIu32 ",%" PRId64 ",%" PRId64 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%u",
             sample->frame_index, sample->t_us, sample->dt_us,
-            sample->process_us, (unsigned)sample->valid_mask);
+            sample->capture_wait_us, sample->process_us,
+            sample->batch_wait_us, sample->dropped_frames,
+            (unsigned)sample->valid_mask);
 
     for (int i = 0; i < APP_TARGET_COUNT; i++) {
         const target_sample_t *t = &sample->target[i];

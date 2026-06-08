@@ -3,81 +3,88 @@
 #include <inttypes.h>
 
 #include "ESP32_P4_DISPLACEMENT.h"
+#include "camera_frame_msg.h"
+#include "timing.h"
 
 static const char *TAG = "cam_task";
-static displacement_sample_t s_batch_buf[2][APP_MAX_BATCH_FRAMES];
-
-static void send_batch(app_context_t *ctx, displacement_sample_t *samples, uint16_t count)
-{
-    if (count == 0) {
-        return;
-    }
-    displacement_batch_t batch = {
-        .samples = samples,
-        .count = count,
-        .end = false,
-    };
-    xQueueSend(ctx->batch_queue, &batch, portMAX_DELAY);
-}
 
 void camera_capture_task(void *arg)
 {
     app_context_t *ctx = (app_context_t *)arg;
     const app_config_t *cfg = &ctx->run_config;
-    const uint32_t total_frames = app_config_total_frames(cfg);
-    const uint16_t batch_frames = cfg->batch_frames > APP_MAX_BATCH_FRAMES
-                                      ? APP_MAX_BATCH_FRAMES
-                                      : cfg->batch_frames;
+    const int64_t duration_us = (int64_t)cfg->duration_s * 1000000LL;
+    const uint32_t expected_frames = app_config_total_frames(cfg);
 
-    int cur = 0;
-    uint16_t pos = 0;
-    int64_t prev_t_us = 0;
+    uint32_t prev_sequence = 0;
+    bool have_prev_sequence = false;
+    uint32_t captured_frames = 0;
+    uint32_t dropped_frames = 0;
+    timing_stat_t queue_send = {0};
+    int64_t start_us = esp_timer_get_time();
+    int64_t next_log_us = start_us + 30000000LL;
 
-    ESP_LOGI(TAG, "capture start: %ux%u@%u fps total=%" PRIu32 " batch=%u",
+    ESP_LOGI(TAG, "capture start: %ux%u@%u fps duration=%" PRIu32
+                  "s expected=%" PRIu32,
              cfg->frame_width, cfg->frame_height, cfg->frame_rate_hz,
-             total_frames, batch_frames);
+             cfg->duration_s, expected_frames);
 
-    for (uint32_t i = 0; i < total_frames; i++) {
+    while ((esp_timer_get_time() - start_us) < duration_us) {
         if (ctx->stop_requested) {
-            ESP_LOGI(TAG, "stop requested at frame %" PRIu32, i);
+            ESP_LOGI(TAG, "stop requested at frame %" PRIu32, captured_frames);
             break;
         }
 
         p4_camera_frame_t frame = {0};
+        int64_t capture_start_us = esp_timer_get_time();
         esp_err_t err = p4_camera_get_frame(&frame, pdMS_TO_TICKS(200));
+        uint32_t capture_wait_us = (uint32_t)(esp_timer_get_time() - capture_start_us);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "camera_get_frame failed: %s", esp_err_to_name(err));
             break;
         }
 
-        displacement_sample_t *sample = &s_batch_buf[cur][pos];
-        err = roi_tracker_process_frame(&frame, cfg, sample);
-        p4_camera_return_frame(&frame);
-
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "roi tracking failed: %s", esp_err_to_name(err));
-            break;
+        camera_frame_msg_t msg = {
+            .frame = frame,
+            .capture_wait_us = capture_wait_us,
+            .dropped_frames = 0,
+            .end = false,
+        };
+        if (have_prev_sequence && frame.sequence > prev_sequence + 1) {
+            msg.dropped_frames = frame.sequence - prev_sequence - 1;
+            dropped_frames += msg.dropped_frames;
         }
+        prev_sequence = frame.sequence;
+        have_prev_sequence = true;
 
-        sample->dt_us = prev_t_us == 0 ? 0 : sample->t_us - prev_t_us;
-        prev_t_us = sample->t_us;
-        pos++;
+        int64_t send_start_us = esp_timer_get_time();
+        xQueueSend(ctx->frame_queue, &msg, portMAX_DELAY);
+        timing_add(&queue_send, (uint32_t)(esp_timer_get_time() - send_start_us));
+        captured_frames++;
 
-        if (pos == batch_frames) {
-            send_batch(ctx, s_batch_buf[cur], pos);
-            cur ^= 1;
-            pos = 0;
+        int64_t now_us = esp_timer_get_time();
+        if (now_us >= next_log_us) {
+            double elapsed_s = (double)(now_us - start_us) / 1000000.0;
+            double fps = elapsed_s > 0.0 ? (double)captured_frames / elapsed_s : 0.0;
+            ESP_LOGI(TAG, "progress elapsed=%.1fs frames=%" PRIu32
+                          " fps=%.3f dropped=%" PRIu32
+                          " frame_queue_send_us[min/avg/max]=%" PRIu32 "/%" PRIu32 "/%" PRIu32,
+                     elapsed_s, captured_frames, fps, dropped_frames,
+                     timing_min(&queue_send), timing_avg(&queue_send), queue_send.max);
+            next_log_us += 30000000LL;
         }
     }
 
-    send_batch(ctx, s_batch_buf[cur], pos);
-
-    displacement_batch_t end = {
-        .samples = NULL,
-        .count = 0,
+    camera_frame_msg_t end = {
         .end = true,
     };
-    xQueueSend(ctx->batch_queue, &end, portMAX_DELAY);
-    ESP_LOGI(TAG, "capture end");
+    xQueueSend(ctx->frame_queue, &end, portMAX_DELAY);
+    int64_t end_us = esp_timer_get_time();
+    double elapsed_s = (double)(end_us - start_us) / 1000000.0;
+    double fps = elapsed_s > 0.0 ? (double)captured_frames / elapsed_s : 0.0;
+    ESP_LOGI(TAG, "capture end elapsed=%.3fs frames=%" PRIu32
+                  " fps=%.3f dropped=%" PRIu32
+                  " frame_queue_send_us[min/avg/max]=%" PRIu32 "/%" PRIu32 "/%" PRIu32,
+             elapsed_s, captured_frames, fps, dropped_frames,
+             timing_min(&queue_send), timing_avg(&queue_send), queue_send.max);
     vTaskDelete(NULL);
 }

@@ -13,6 +13,8 @@
 typedef enum {
     APP_PIXEL_FORMAT_GRAY8 = 0,
     APP_PIXEL_FORMAT_RAW8  = 1,
+    APP_PIXEL_FORMAT_RAW10 = 2,
+    APP_PIXEL_FORMAT_RGB565 = 3,
 } app_pixel_format_t;
 
 typedef enum {

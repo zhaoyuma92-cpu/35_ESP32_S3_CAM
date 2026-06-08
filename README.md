@@ -1,78 +1,91 @@
 # ESP32-P4 OV5647 Four-Target Displacement Node
 
-This project is built inside `35_ESP32_S3_CAM` only.
+Built inside `35_ESP32_S3_CAM`.
 
 ## Goal
 
-Use an ESP32-P4-NANO board with an OV5647 MIPI-CSI camera to acquire grayscale
-camera frames, track four target ROIs, calculate each target center point, and
-output four-target displacement data at 30 fps or higher.
+Use a Waveshare ESP32-P4-NANO with an OV5647 MIPI-CSI camera to acquire frames,
+track four ROI targets, and write four-target displacement data to an SD card as
+CSV at ≥ 30 fps.  No full-frame image is saved in the hot path.
 
-The main output is numeric displacement data. The firmware does not save JPEG
-or full-frame images in the hot path.
+## Current Status (validated 2026-06-07)
 
-## Current Status
+| Item | Value |
+|------|-------|
+| Board | Waveshare ESP32-P4-NANO, ESP32-P4 rev v1.3 |
+| Camera | RPi Camera(B), OV5647 Rev 2.0 |
+| Sensor mode | `1280×960 RAW10 binning` format |
+| Effective frame rate | **30 fps** (VTS overridden from 45 → 30 fps) |
+| Frame format | ISP RAW10 → RGB565 conversion, PSRAM double buffer |
+| SD card | SDMMC 4-bit, 20 MHz, ESP32-P4 on-chip LDO4 IO power |
+| Output | `/sdcard/displacement.csv` |
+| Run duration | 600 s (configurable in `app_config.c`) |
 
-Current validated mode:
-
-- Board: Waveshare ESP32-P4-NANO, ESP32-P4 rev v1.3
-- Camera: RPi Camera(B), OV5647 Rev 2.0
-- Camera mode: `800x640 RAW8 @ 50 fps` sensor format
-- Runtime output: `/sdcard/displacement.csv`
-- SD card: SDMMC 4-bit, 20 MHz, on-chip LDO4 IO power
-- Acquisition: 500 frames, four ROIs, CSV output
-- Measured frame interval: average `29151 us`, about `34.3 fps`
-
-The 30 fps four-target displacement target is currently reached in this
-validated 800x640 mode.
+See `docs/bringup-record-2026-06-07.md` for the validated run log.
 
 ## Data Path
 
-```text
-OV5647 RAW8 frame
-  -> ESP32-P4 MIPI-CSI
-  -> ISP RAW8 pass-through
-  -> PSRAM double frame buffer
-  -> four ROI threshold + center-of-mass tracking
-  -> displacement sample batch queue
-  -> SD card CSV writer
+```
+OV5647 RAW10 sensor
+  → MIPI-CSI 2-lane, 442 Mbps/lane
+  → ESP32-P4 CSI controller (RAW10 in, RGB565 out via ISP)
+  → PSRAM double frame buffer
+
+camera_capture_task (CPU0, pri 5)   — reads CSI frames, sends to ROI task
+  → frame_queue (depth 2)
+roi_process_task    (CPU1, pri 5)   — center-of-mass tracking, batch assembly
+  → batch_queue (depth 3)
+sdcard_write_task   (CPU0, pri 2)   — CSV write to SD card
 ```
 
-## Output Format
+## CSV Output Format
 
-One CSV row is one processed frame:
+One row per processed frame:
 
-```text
-frame_index,t_us,dt_us,process_us,valid_mask,
-t1_valid,t1_cx_px,t1_cy_px,t1_dx_px,t1_dy_px,t1_threshold,t1_pixels,t1_quality,
-...
-t4_valid,t4_cx_px,t4_cy_px,t4_dx_px,t4_dy_px,t4_threshold,t4_pixels,t4_quality
+```
+frame_index, t_us, dt_us, capture_wait_us, process_us, batch_wait_us,
+dropped_frames, valid_mask,
+t1_valid, t1_cx_px, t1_cy_px, t1_dx_px, t1_dy_px, t1_threshold, t1_pixels, t1_quality,
+… (× 4 targets)
 ```
 
-Pixel center and displacement values are stored internally as Q8 fixed-point
-values and printed as decimal pixel values.
+Pixel center and displacement are Q8 fixed-point printed as decimal.
 
 ## Important Files
 
-- `main/drivers/p4_camera.c`: OV5647 MIPI-CSI camera backend
-- `main/drivers/sdcard.c`: SDMMC 4-bit SD card mount
-- `main/vision/roi_tracker.c`: four-ROI center tracking
-- `main/acquisition/camera_capture_task.c`: frame acquisition and ROI processing
-- `main/acquisition/sdcard_write_task.c`: batch write task
-- `main/storage/csv_writer.c`: CSV writer
-- `main/config/app_config.c`: default ROI and run configuration
-- `main/board/board_config.h`: board pin and camera mode configuration
+| File | Purpose |
+|------|---------|
+| `main/board/board_config.h` | GPIO, camera mode, LDO channel constants |
+| `main/drivers/p4_camera.c` | OV5647 MIPI-CSI init and frame acquisition |
+| `main/drivers/sdcard.c` | SDMMC 4-bit mount via on-chip LDO4 |
+| `main/vision/roi_tracker.c` | Single-ROI threshold + center-of-mass |
+| `main/acquisition/camera_capture_task.c` | Camera → frame_queue |
+| `main/acquisition/roi_process_task.c` | frame_queue → batch_queue |
+| `main/acquisition/sdcard_write_task.c` | batch_queue → CSV |
+| `main/acquisition/timing.h` | Shared min/avg/max timing accumulator |
+| `main/storage/csv_writer.c` | FATFS CSV write helper |
+| `main/config/app_config.c` | Default ROI and run configuration |
 
-## Build And Flash
+## Build and Flash
 
-Use ESP-IDF v5.5.4 for ESP32-P4 rev v1.3:
+Requires ESP-IDF v5.5.4.
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-$env:IDF_TOOLS_PATH='C:\Espressif'
+$env:IDF_TOOLS_PATH = 'C:\Espressif'
 . 'D:\.espressif\v5.5\v5.5.4\esp-idf\export.ps1'
 idf.py build
-idf.py -p COM8 flash
+```
+
+Flash (COM8 is the ESP32-P4-NANO programming port on this machine):
+
+```powershell
+python -m esptool --chip esp32p4 -p COM8 -b 460800 `
+  --before default_reset --after hard_reset write_flash `
+  --flash_mode dio --flash_freq 40m --flash_size 16MB `
+  0x2000  build/bootloader/bootloader.bin `
+  0x8000  build/partition_table/partition-table.bin `
+  0x10000 build/esp32_p4_ov5647_displacement.bin
 ```
 
 Monitor:
@@ -81,15 +94,9 @@ Monitor:
 idf.py -p COM8 monitor
 ```
 
-## Current Limits
+## Known Limits
 
-- The validated camera mode is `800x640 RAW8`; `1280x1040` is not currently a
-  supported OV5647 RAW8 mode in the installed driver.
-- ROIs are currently fixed defaults for bring-up. They must be calibrated for
-  the real target positions.
-- The default run is frame-count based: `50 fps * 10 s = 500 frames`. Because
-  the measured full pipeline rate is about 34 fps, that run takes longer than
-  10 wall-clock seconds.
-- Real-time host output over UART, Ethernet, or HTTP is not implemented yet.
-
-See `docs/bringup-record-2026-06-07.md` for the validated run record.
+- ROIs default to static bring-up coordinates; calibrate for real target positions.
+- No live host output (UART/Ethernet/HTTP) — SD card only.
+- PWDN/RESET/XCLK are not driven from software; the board holds these inactive
+  in hardware.

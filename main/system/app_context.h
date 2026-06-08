@@ -10,7 +10,9 @@
 #include "app_config.h"
 
 typedef struct {
+    QueueHandle_t frame_queue;
     QueueHandle_t batch_queue;
+    QueueHandle_t free_batch_queue;
     SemaphoreHandle_t acquisition_done_sem;
     app_config_t config;
     app_config_t run_config;

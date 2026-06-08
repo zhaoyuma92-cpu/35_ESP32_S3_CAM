@@ -153,7 +153,19 @@ void p4_camera_return_frame(const p4_camera_frame_t *frame)
 
 #define CAM_FRAME_W     BOARD_DEFAULT_FRAME_WIDTH
 #define CAM_FRAME_H     BOARD_DEFAULT_FRAME_HEIGHT
-#define CAM_FRAME_SIZE  ((size_t)(CAM_FRAME_W) * (CAM_FRAME_H))  /* 1 byte/px RAW8 */
+#ifndef BOARD_CAM_BITS_PER_PIXEL
+#define BOARD_CAM_BITS_PER_PIXEL 8
+#endif
+#ifndef BOARD_CAM_FRAME_BITS_PER_PIXEL
+#define BOARD_CAM_FRAME_BITS_PER_PIXEL BOARD_CAM_BITS_PER_PIXEL
+#endif
+#ifndef BOARD_CAM_PIXEL_FORMAT
+#define BOARD_CAM_PIXEL_FORMAT APP_PIXEL_FORMAT_GRAY8
+#endif
+#ifndef BOARD_CAM_OV5647_VTS_OVERRIDE
+#define BOARD_CAM_OV5647_VTS_OVERRIDE 0
+#endif
+#define CAM_FRAME_SIZE  (((size_t)(CAM_FRAME_W) * (CAM_FRAME_H) * BOARD_CAM_FRAME_BITS_PER_PIXEL) / 8)
 #define CAM_NUM_BUFS    2
 /* 64-byte DMA alignment sufficient for ESP32-P4 */
 #define CAM_BUF_ALIGN   64
@@ -173,6 +185,50 @@ typedef struct {
 } real_cam_t;
 
 static real_cam_t s_cam;
+
+static esp_err_t ov5647_write_reg(esp_cam_sensor_device_t *cam, uint16_t reg, uint8_t value)
+{
+    esp_cam_sensor_reg_val_t regval = {
+        .regaddr = reg,
+        .value = value,
+    };
+    return esp_cam_sensor_ioctl(cam, ESP_CAM_SENSOR_IOC_S_REG, &regval);
+}
+
+static esp_err_t ov5647_read_reg(esp_cam_sensor_device_t *cam, uint16_t reg, uint8_t *value)
+{
+    esp_cam_sensor_reg_val_t regval = {
+        .regaddr = reg,
+    };
+    esp_err_t err = esp_cam_sensor_ioctl(cam, ESP_CAM_SENSOR_IOC_G_REG, &regval);
+    if (err == ESP_OK) {
+        *value = (uint8_t)regval.value;
+    }
+    return err;
+}
+
+static esp_err_t ov5647_apply_timing_override(esp_cam_sensor_device_t *cam)
+{
+#if BOARD_CAM_OV5647_VTS_OVERRIDE > 0
+    const uint16_t vts = BOARD_CAM_OV5647_VTS_OVERRIDE;
+    ESP_RETURN_ON_ERROR(ov5647_write_reg(cam, 0x380e, (uint8_t)(vts >> 8)),
+                        TAG, "write OV5647 VTS high failed");
+    ESP_RETURN_ON_ERROR(ov5647_write_reg(cam, 0x380f, (uint8_t)(vts & 0xff)),
+                        TAG, "write OV5647 VTS low failed");
+
+    uint8_t vts_h = 0;
+    uint8_t vts_l = 0;
+    ESP_RETURN_ON_ERROR(ov5647_read_reg(cam, 0x380e, &vts_h),
+                        TAG, "read OV5647 VTS high failed");
+    ESP_RETURN_ON_ERROR(ov5647_read_reg(cam, 0x380f, &vts_l),
+                        TAG, "read OV5647 VTS low failed");
+    ESP_LOGI(TAG, "OV5647 VTS override: %u -> readback=%u (target %u fps)",
+             vts, ((uint16_t)vts_h << 8) | vts_l, BOARD_DEFAULT_FRAME_RATE_HZ);
+#else
+    (void)cam;
+#endif
+    return ESP_OK;
+}
 
 /* ---- ISR callbacks (must be in IRAM) ---- */
 
@@ -241,21 +297,23 @@ static esp_err_t sensor_init(void)
     ESP_RETURN_ON_ERROR(i2c_new_master_bus(&i2c_cfg, &s_cam.i2c_bus),
                         TAG, "I2C bus init failed");
 
-    /* Debug: scan I2C bus for any responding device */
+#if CONFIG_LOG_DEFAULT_LEVEL_DEBUG
+    /* I2C bus scan — prints all devices; useful during bring-up */
     {
         bool found_any = false;
-        ESP_LOGI(TAG, "I2C scan on SDA=GPIO%d SCL=GPIO%d:",
+        ESP_LOGD(TAG, "I2C scan on SDA=GPIO%d SCL=GPIO%d:",
                  BOARD_CAM_SCCB_SDA_IO, BOARD_CAM_SCCB_SCL_IO);
         for (uint8_t addr = 0x08; addr < 0x78; addr++) {
             if (i2c_master_probe(s_cam.i2c_bus, addr, 10) == ESP_OK) {
-                ESP_LOGI(TAG, "  I2C device at 0x%02X", addr);
+                ESP_LOGD(TAG, "  I2C device at 0x%02X", addr);
                 found_any = true;
             }
         }
         if (!found_any) {
-            ESP_LOGW(TAG, "  NO I2C devices found — camera not connected or PWDN still HIGH");
+            ESP_LOGW(TAG, "  NO I2C devices found");
         }
     }
+#endif
 
     /* Walk the auto-detect list built by esp_cam_sensor */
     esp_cam_sensor_config_t sensor_cfg = {
@@ -318,13 +376,16 @@ static esp_err_t sensor_init(void)
 
     ESP_RETURN_ON_ERROR(esp_cam_sensor_set_format(cam, selected),
                         TAG, "set format failed");
+    ESP_RETURN_ON_ERROR(ov5647_apply_timing_override(cam),
+                        TAG, "sensor timing override failed");
 
     int stream_en = 1;
     ESP_RETURN_ON_ERROR(esp_cam_sensor_ioctl(cam, ESP_CAM_SENSOR_IOC_S_STREAM, &stream_en),
                         TAG, "start stream failed");
 
-    ESP_LOGI(TAG, "OV5647 streaming: %s %ux%u RAW8 @%u fps",
-             selected->name, selected->width, selected->height, selected->fps);
+    ESP_LOGI(TAG, "OV5647 streaming: %s %ux%u native=%u fps effective=%u fps",
+             selected->name, selected->width, selected->height,
+             selected->fps, BOARD_DEFAULT_FRAME_RATE_HZ);
     return ESP_OK;
 }
 
@@ -338,7 +399,7 @@ esp_err_t p4_camera_init(const app_config_t *cfg)
     s_cfg.frame_height = CAM_FRAME_H;
     s_cfg.frame_stride = CAM_FRAME_W;
     s_cfg.frame_rate_hz = BOARD_DEFAULT_FRAME_RATE_HZ;
-    s_cfg.pixel_format  = APP_PIXEL_FORMAT_GRAY8;  /* RAW8 Bayer used as gray */
+    s_cfg.pixel_format  = BOARD_CAM_PIXEL_FORMAT;
 
     memset(&s_cam, 0, sizeof(s_cam));
     s_cam.ready_idx = -1;
@@ -381,8 +442,13 @@ esp_err_t p4_camera_init(const app_config_t *cfg)
         .v_res                 = CAM_FRAME_H,
         .data_lane_num         = 2,
         .lane_bit_rate_mbps    = BOARD_CAM_LANE_BIT_RATE_MBPS,
+#if BOARD_CAM_BITS_PER_PIXEL == 10
+        .input_data_color_type = CAM_CTLR_COLOR_RAW10,
+        .output_data_color_type = CAM_CTLR_COLOR_RGB565,
+#else
         .input_data_color_type = CAM_CTLR_COLOR_RAW8,
         .output_data_color_type = CAM_CTLR_COLOR_RAW8,
+#endif
         .queue_items           = 1,
         .byte_swap_en          = false,
     };
@@ -404,8 +470,13 @@ esp_err_t p4_camera_init(const app_config_t *cfg)
     esp_isp_processor_cfg_t isp_cfg = {
         .clk_hz                = 80 * 1000 * 1000,
         .input_data_source     = ISP_INPUT_DATA_SOURCE_CSI,
+#if BOARD_CAM_BITS_PER_PIXEL == 10
+        .input_data_color_type = ISP_COLOR_RAW10,
+        .output_data_color_type = ISP_COLOR_RGB565,
+#else
         .input_data_color_type = ISP_COLOR_RAW8,
         .output_data_color_type = ISP_COLOR_RAW8,
+#endif
         .has_line_start_packet = false,
         .has_line_end_packet   = false,
         .h_res                 = CAM_FRAME_W,
@@ -431,8 +502,9 @@ esp_err_t p4_camera_init(const app_config_t *cfg)
         esp_cam_ctlr_receive(s_cam.cam_handle, &first_trans, 200),
         TAG, "initial CSI receive failed");
 
-    ESP_LOGI(TAG, "OV5647 MIPI-CSI ready: %ux%u RAW8 @%u fps",
-             CAM_FRAME_W, CAM_FRAME_H, BOARD_DEFAULT_FRAME_RATE_HZ);
+    ESP_LOGI(TAG, "OV5647 MIPI-CSI ready: %ux%u RAW%u input, %u bpp buffer @%u fps",
+             CAM_FRAME_W, CAM_FRAME_H, BOARD_CAM_BITS_PER_PIXEL,
+             BOARD_CAM_FRAME_BITS_PER_PIXEL, BOARD_DEFAULT_FRAME_RATE_HZ);
     return ESP_OK;
 }
 
@@ -454,7 +526,7 @@ esp_err_t p4_camera_get_frame(p4_camera_frame_t *frame, TickType_t timeout)
     frame->width        = CAM_FRAME_W;
     frame->height       = CAM_FRAME_H;
     frame->stride       = CAM_FRAME_W;
-    frame->pixel_format = APP_PIXEL_FORMAT_GRAY8;
+    frame->pixel_format = BOARD_CAM_PIXEL_FORMAT;
     frame->sequence     = s_cam.sequence;
     frame->t_us         = esp_timer_get_time();
     return ESP_OK;

@@ -3,11 +3,16 @@
 
 #define BOARD_NAME "ESP32-P4-NANO"
 
-/* Real OV5647 camera resolution via MIPI-CSI RAW8 2-lane mode */
-#define BOARD_DEFAULT_FRAME_WIDTH    800
-#define BOARD_DEFAULT_FRAME_HEIGHT   640
-#define BOARD_DEFAULT_FRAME_STRIDE   800
-#define BOARD_DEFAULT_FRAME_RATE_HZ   50
+/* Temporary high-resolution frame-rate test.
+ * The installed OV5647 driver does not expose 1080x960; the closest supported
+ * high mode is 1280x960 RAW10 binning. The sensor mode is slowed from its
+ * native 45 fps to 30 fps by overriding OV5647 VTS after set_format(). */
+#define BOARD_DEFAULT_FRAME_WIDTH    1280
+#define BOARD_DEFAULT_FRAME_HEIGHT    960
+#define BOARD_DEFAULT_FRAME_STRIDE   1280
+#define BOARD_DEFAULT_FRAME_RATE_HZ    30
+#define BOARD_CAM_BITS_PER_PIXEL       10
+#define BOARD_CAM_FRAME_BITS_PER_PIXEL 16
 
 /* I2C / SCCB bus for OV5647 (confirmed from Waveshare ESP32-P4-NANO schematic) */
 #define BOARD_CAM_SCCB_SDA_IO        7
@@ -30,12 +35,18 @@
 #define BOARD_CAM_LDO_CHAN            3
 #define BOARD_CAM_LDO_MV          2500
 
-/* CSI controller lane bit rate for OV5647 RAW8 800x640@50, matching IDF's
- * esp_driver_cam test_csi_ov5647.c. */
-#define BOARD_CAM_LANE_BIT_RATE_MBPS  200
+/* CSI controller lane bit rate for OV5647 RAW10 1280x960 binning native mode. */
+#define BOARD_CAM_LANE_BIT_RATE_MBPS  442
 
 /* OV5647 camera sensor format string */
-#define BOARD_CAM_FORMAT_NAME  "MIPI_2lane_24Minput_RAW8_800x640_50fps"
+#define BOARD_CAM_FORMAT_NAME  "MIPI_2lane_24Minput_RAW10_1280x960_binning_45fps"
+#define BOARD_CAM_PIXEL_FORMAT APP_PIXEL_FORMAT_RGB565
+
+/* 1280x960 RAW10 native timing: PCLK=88.333333 MHz, HTS=1796, VTS=1093.
+ * The nominal 45 fps mode measured about 43.2 fps on this board, so tune VTS
+ * from the measured 1640->28.79 fps result to target 30.0 fps.
+ */
+#define BOARD_CAM_OV5647_VTS_OVERRIDE 1574
 
 /* SD card, SDMMC 4-bit mode */
 #define BOARD_SD_CLK_IO    43

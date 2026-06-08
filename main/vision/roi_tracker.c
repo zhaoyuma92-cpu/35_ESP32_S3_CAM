@@ -15,8 +15,21 @@ static int clamp_int(int value, int lo, int hi)
     return value;
 }
 
-static uint8_t sample_gray8(const p4_camera_frame_t *frame, int x, int y)
+static uint8_t rgb565_to_luma(uint16_t pixel)
 {
+    uint32_t r = (uint32_t)((pixel >> 11) & 0x1F) * 255U / 31U;
+    uint32_t g = (uint32_t)((pixel >> 5) & 0x3F) * 255U / 63U;
+    uint32_t b = (uint32_t)(pixel & 0x1F) * 255U / 31U;
+    return (uint8_t)((r * 30U + g * 59U + b * 11U) / 100U);
+}
+
+static inline uint8_t sample_luma(const p4_camera_frame_t *frame, int x, int y)
+{
+    if (frame->pixel_format == APP_PIXEL_FORMAT_RGB565) {
+        const uint8_t *p = frame->data + (((size_t)y * frame->stride + x) * 2U);
+        uint16_t pixel = (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+        return rgb565_to_luma(pixel);
+    }
     return frame->data[(size_t)y * frame->stride + x];
 }
 
@@ -34,7 +47,7 @@ static uint8_t compute_threshold(const p4_camera_frame_t *frame,
     uint8_t max_v = 0;
 
     for (int x = x1; x <= x2; x++) {
-        uint8_t p = sample_gray8(frame, x, cy);
+        uint8_t p = sample_luma(frame, x, cy);
         if (p < min_v) {
             min_v = p;
         }
@@ -44,7 +57,7 @@ static uint8_t compute_threshold(const p4_camera_frame_t *frame,
     }
 
     for (int y = y1; y <= y2; y++) {
-        uint8_t p = sample_gray8(frame, cx, y);
+        uint8_t p = sample_luma(frame, cx, y);
         if (p < min_v) {
             min_v = p;
         }
@@ -120,11 +133,19 @@ static void track_one_roi(const p4_camera_frame_t *frame,
     uint64_t sum_y = 0;
     uint32_t count = 0;
     uint32_t area = (uint32_t)(x2 - x1 + 1) * (uint32_t)(y2 - y1 + 1);
+    bool is_rgb565 = frame->pixel_format == APP_PIXEL_FORMAT_RGB565;
 
     for (int y = y1; y <= y2; y++) {
-        const uint8_t *row = frame->data + (size_t)y * frame->stride;
+        const uint8_t *row = frame->data + (size_t)y * frame->stride * (is_rgb565 ? 2U : 1U);
         for (int x = x1; x <= x2; x++) {
-            uint8_t p = row[x];
+            uint8_t p;
+            if (is_rgb565) {
+                const uint8_t *px = row + ((size_t)x * 2U);
+                uint16_t rgb565 = (uint16_t)px[0] | ((uint16_t)px[1] << 8);
+                p = rgb565_to_luma(rgb565);
+            } else {
+                p = row[x];
+            }
             if (p < min_v) {
                 min_v = p;
             }
@@ -167,7 +188,8 @@ esp_err_t roi_tracker_process_frame(const p4_camera_frame_t *frame,
         return ESP_ERR_INVALID_ARG;
     }
     if (frame->pixel_format != APP_PIXEL_FORMAT_GRAY8 &&
-        frame->pixel_format != APP_PIXEL_FORMAT_RAW8) {
+        frame->pixel_format != APP_PIXEL_FORMAT_RAW8 &&
+        frame->pixel_format != APP_PIXEL_FORMAT_RGB565) {
         return ESP_ERR_NOT_SUPPORTED;
     }
     if (frame->stride < frame->width) {

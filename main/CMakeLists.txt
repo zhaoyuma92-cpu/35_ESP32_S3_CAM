@@ -9,6 +9,7 @@ idf_component_register(
         "vision/roi_tracker.c"
         "acquisition/acq_manager.c"
         "acquisition/camera_capture_task.c"
+        "acquisition/roi_process_task.c"
         "acquisition/sdcard_write_task.c"
         "storage/csv_writer.c"
     INCLUDE_DIRS

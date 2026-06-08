@@ -53,9 +53,9 @@ void app_config_load_defaults(app_config_t *cfg)
     cfg->frame_height = BOARD_DEFAULT_FRAME_HEIGHT;
     cfg->frame_stride = BOARD_DEFAULT_FRAME_STRIDE;
     cfg->frame_rate_hz = BOARD_DEFAULT_FRAME_RATE_HZ;
-    cfg->duration_s = 10;
+    cfg->duration_s = 600;
     cfg->batch_frames = 30;
-    cfg->pixel_format = APP_PIXEL_FORMAT_GRAY8;
+    cfg->pixel_format = BOARD_CAM_PIXEL_FORMAT;
 
 #if CONFIG_DISP_FAKE_CAMERA
     uint16_t w = CONFIG_DISP_FAKE_FRAME_WIDTH;

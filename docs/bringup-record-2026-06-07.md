@@ -120,3 +120,21 @@ The next work should focus on:
 - Running longer stability tests.
 - Deciding whether output should stay on SD card or also stream live over UART,
   Ethernet, or HTTP.
+
+## 5-Minute Frame-Rate Test Build
+
+The next firmware build changes the default run from the earlier short
+500-frame test to a wall-clock `300 s` stability test.
+
+Added diagnostics:
+
+- capture-side progress log every 30 seconds
+- writer-side actual fps
+- dropped-frame count from CSI sequence gaps
+- `process_us` min/avg/max
+- final elapsed time and fps summary
+
+The batch buffer path was also changed from two alternating buffers to
+free/full queue ownership with four static buffers. This is required for longer
+SD-card runs because the capture task must not reuse a buffer while the write
+task still owns it.

@@ -24,9 +24,11 @@
 #include "p4_camera.h"
 #include "sdcard.h"
 #include "displacement_sample.h"
+#include "camera_frame_msg.h"
 #include "roi_tracker.h"
 #include "acq_manager.h"
 #include "camera_capture_task.h"
+#include "roi_process_task.h"
 #include "sdcard_write_task.h"
 #include "csv_writer.h"
 

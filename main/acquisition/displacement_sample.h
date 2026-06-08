@@ -21,7 +21,10 @@ typedef struct {
     uint32_t frame_index;
     int64_t t_us;
     int64_t dt_us;
+    uint32_t capture_wait_us;
     uint32_t process_us;
+    uint32_t batch_wait_us;
+    uint32_t dropped_frames;
     uint16_t width;
     uint16_t height;
     uint8_t valid_mask;
