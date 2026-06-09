@@ -444,7 +444,7 @@ esp_err_t p4_camera_init(const app_config_t *cfg)
         .lane_bit_rate_mbps    = BOARD_CAM_LANE_BIT_RATE_MBPS,
 #if BOARD_CAM_BITS_PER_PIXEL == 10
         .input_data_color_type = CAM_CTLR_COLOR_RAW10,
-        .output_data_color_type = CAM_CTLR_COLOR_RGB565,
+        .output_data_color_type = CAM_CTLR_COLOR_YUV422,
 #else
         .input_data_color_type = CAM_CTLR_COLOR_RAW8,
         .output_data_color_type = CAM_CTLR_COLOR_RAW8,
@@ -472,7 +472,7 @@ esp_err_t p4_camera_init(const app_config_t *cfg)
         .input_data_source     = ISP_INPUT_DATA_SOURCE_CSI,
 #if BOARD_CAM_BITS_PER_PIXEL == 10
         .input_data_color_type = ISP_COLOR_RAW10,
-        .output_data_color_type = ISP_COLOR_RGB565,
+        .output_data_color_type = ISP_COLOR_YUV422,
 #else
         .input_data_color_type = ISP_COLOR_RAW8,
         .output_data_color_type = ISP_COLOR_RAW8,
@@ -502,9 +502,10 @@ esp_err_t p4_camera_init(const app_config_t *cfg)
         esp_cam_ctlr_receive(s_cam.cam_handle, &first_trans, 200),
         TAG, "initial CSI receive failed");
 
-    ESP_LOGI(TAG, "OV5647 MIPI-CSI ready: %ux%u RAW%u input, %u bpp buffer @%u fps",
+    ESP_LOGI(TAG, "OV5647 MIPI-CSI ready: %ux%u RAW%u in → fmt=%d %ubpp buf=%u bytes @%u fps",
              CAM_FRAME_W, CAM_FRAME_H, BOARD_CAM_BITS_PER_PIXEL,
-             BOARD_CAM_FRAME_BITS_PER_PIXEL, BOARD_DEFAULT_FRAME_RATE_HZ);
+             (int)BOARD_CAM_PIXEL_FORMAT, BOARD_CAM_FRAME_BITS_PER_PIXEL,
+             (unsigned)CAM_FRAME_SIZE, BOARD_DEFAULT_FRAME_RATE_HZ);
     return ESP_OK;
 }
 

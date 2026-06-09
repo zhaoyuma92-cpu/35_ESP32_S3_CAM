@@ -11,10 +11,11 @@
 #define APP_MAX_BATCH_FRAMES     60
 
 typedef enum {
-    APP_PIXEL_FORMAT_GRAY8 = 0,
-    APP_PIXEL_FORMAT_RAW8  = 1,
-    APP_PIXEL_FORMAT_RAW10 = 2,
+    APP_PIXEL_FORMAT_GRAY8  = 0,
+    APP_PIXEL_FORMAT_RAW8   = 1,
+    APP_PIXEL_FORMAT_RAW10  = 2,
     APP_PIXEL_FORMAT_RGB565 = 3,
+    APP_PIXEL_FORMAT_YUV422 = 4,  /* YUYV packing: Y0 U0 Y1 V0 per 4 bytes, 16 bpp */
 } app_pixel_format_t;
 
 typedef enum {

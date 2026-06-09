@@ -30,6 +30,10 @@ static inline uint8_t sample_luma(const p4_camera_frame_t *frame, int x, int y)
         uint16_t pixel = (uint16_t)p[0] | ((uint16_t)p[1] << 8);
         return rgb565_to_luma(pixel);
     }
+    if (frame->pixel_format == APP_PIXEL_FORMAT_YUV422) {
+        /* YUYV: [Y0][U0][Y1][V0]... — Y at byte offset x*2 within each row */
+        return frame->data[((size_t)y * frame->stride + x) * 2U];
+    }
     return frame->data[(size_t)y * frame->stride + x];
 }
 
@@ -133,16 +137,21 @@ static void track_one_roi(const p4_camera_frame_t *frame,
     uint64_t sum_y = 0;
     uint32_t count = 0;
     uint32_t area = (uint32_t)(x2 - x1 + 1) * (uint32_t)(y2 - y1 + 1);
-    bool is_rgb565 = frame->pixel_format == APP_PIXEL_FORMAT_RGB565;
+    bool is_rgb565  = frame->pixel_format == APP_PIXEL_FORMAT_RGB565;
+    bool is_yuv422  = frame->pixel_format == APP_PIXEL_FORMAT_YUV422;
+    bool is_packed16 = is_rgb565 || is_yuv422;
 
     for (int y = y1; y <= y2; y++) {
-        const uint8_t *row = frame->data + (size_t)y * frame->stride * (is_rgb565 ? 2U : 1U);
+        const uint8_t *row = frame->data + (size_t)y * frame->stride * (is_packed16 ? 2U : 1U);
         for (int x = x1; x <= x2; x++) {
             uint8_t p;
             if (is_rgb565) {
                 const uint8_t *px = row + ((size_t)x * 2U);
                 uint16_t rgb565 = (uint16_t)px[0] | ((uint16_t)px[1] << 8);
                 p = rgb565_to_luma(rgb565);
+            } else if (is_yuv422) {
+                /* YUYV: Y at even byte positions within row */
+                p = row[(size_t)x * 2U];
             } else {
                 p = row[x];
             }
@@ -189,7 +198,8 @@ esp_err_t roi_tracker_process_frame(const p4_camera_frame_t *frame,
     }
     if (frame->pixel_format != APP_PIXEL_FORMAT_GRAY8 &&
         frame->pixel_format != APP_PIXEL_FORMAT_RAW8 &&
-        frame->pixel_format != APP_PIXEL_FORMAT_RGB565) {
+        frame->pixel_format != APP_PIXEL_FORMAT_RGB565 &&
+        frame->pixel_format != APP_PIXEL_FORMAT_YUV422) {
         return ESP_ERR_NOT_SUPPORTED;
     }
     if (frame->stride < frame->width) {

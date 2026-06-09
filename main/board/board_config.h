@@ -40,7 +40,7 @@
 
 /* OV5647 camera sensor format string */
 #define BOARD_CAM_FORMAT_NAME  "MIPI_2lane_24Minput_RAW10_1280x960_binning_45fps"
-#define BOARD_CAM_PIXEL_FORMAT APP_PIXEL_FORMAT_RGB565
+#define BOARD_CAM_PIXEL_FORMAT APP_PIXEL_FORMAT_YUV422
 
 /* 1280x960 RAW10 native timing: PCLK=88.333333 MHz, HTS=1796, VTS=1093.
  * The nominal 45 fps mode measured about 43.2 fps on this board, so tune VTS
