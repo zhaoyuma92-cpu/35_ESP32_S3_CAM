@@ -1,0 +1,45 @@
+# ── Target ────────────────────────────────────────────────────────────────────
+CONFIG_IDF_TARGET="esp32p4"
+
+# ── ESP32-P4 silicon (Waveshare NANO board uses rev v1.3 pre-production) ──────
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_100=y
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+
+# ── Flash (16 MB, 40 MHz — safe for rev v1.3) ─────────────────────────────────
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
+
+# ── PSRAM (HEX mode, 80 MHz conservative for v1.x silicon) ───────────────────
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# ── FreeRTOS ──────────────────────────────────────────────────────────────────
+CONFIG_FREERTOS_HZ=1000
+
+# ── Log (keep verbose available for debug) ───────────────────────────────────
+CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE=y
+
+# ── WiFi — STA only, disable SoftAP to save RAM ──────────────────────────────
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
+
+# ── esp_hosted slave: onboard ESP32-C6 ───────────────────────────────────────
+CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
+
+# ── esp_hosted transport: SDIO ───────────────────────────────────────────────
+CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE=y
+CONFIG_ESP_HOSTED_SDIO_4_BIT_BUS=y
+
+# Clock: start at 20 MHz for bring-up; increase to 40 MHz once SDIO is stable
+CONFIG_ESP_HOSTED_SDIO_CLOCK_FREQ_KHZ=20000
+
+# ── SDIO GPIO mapping (Waveshare ESP32-P4-NANO schematic) ────────────────────
+# Slot 0 GPIO matrix — dedicated lines to onboard C6
+CONFIG_ESP_HOSTED_SDIO_GPIO_RESET_SLAVE=54
+CONFIG_ESP_HOSTED_SDIO_PIN_CLK=18
+CONFIG_ESP_HOSTED_SDIO_PIN_CMD=19
+CONFIG_ESP_HOSTED_SDIO_PIN_D0=14
+CONFIG_ESP_HOSTED_SDIO_PIN_D1=15
+CONFIG_ESP_HOSTED_SDIO_PIN_D2=16
+CONFIG_ESP_HOSTED_SDIO_PIN_D3=17
