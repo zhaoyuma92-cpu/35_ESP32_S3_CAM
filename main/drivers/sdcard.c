@@ -66,6 +66,7 @@ esp_err_t sdcard_mount(void)
     }
 
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    host.slot         = SDMMC_HOST_SLOT_0;  /* SLOT_0 = SD card; SLOT_1 reserved for C6 SDIO */
     host.max_freq_khz = SDMMC_FREQ_DEFAULT; /* 20 MHz, same as the Waveshare demo */
 
 #if SOC_SDMMC_IO_POWER_EXTERNAL

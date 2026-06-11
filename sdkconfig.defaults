@@ -31,3 +31,8 @@ CONFIG_SPIRAM_SPEED_80M=y
 
 # Enable verbose log level at compile time so esp_log_level_set(VERBOSE) works
 CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE=y
+
+# WiFi (disabled by default — set DISP_ENABLE_WIFI=y to activate)
+CONFIG_DISP_ENABLE_WIFI=n
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
+CONFIG_SLAVE_IDF_TARGET_ESP32C6=y

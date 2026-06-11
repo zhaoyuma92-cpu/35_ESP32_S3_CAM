@@ -36,3 +36,30 @@ config DISP_OUTPUT_PATH
         writer logs a warning and the pipeline still runs.
 
 endmenu
+
+menu "WiFi (optional)"
+
+config DISP_ENABLE_WIFI
+    bool "Enable WiFi via onboard ESP32-C6 (SDIO)"
+    default n
+    help
+        Enables esp_hosted + esp_wifi_remote to connect the ESP32-C6 coprocessor
+        to WiFi. When disabled, no SDIO init is performed and the 30fps pipeline
+        is unaffected.
+
+config DISP_WIFI_SSID
+    string "WiFi SSID (2.4 GHz)"
+    default "Xiaomi_BDA5"
+    depends on DISP_ENABLE_WIFI
+
+config DISP_WIFI_PASSWORD
+    string "WiFi password"
+    default "mzy19920720"
+    depends on DISP_ENABLE_WIFI
+
+config DISP_WIFI_MAX_RETRY
+    int "Max WiFi reconnect attempts"
+    default 5
+    depends on DISP_ENABLE_WIFI
+
+endmenu

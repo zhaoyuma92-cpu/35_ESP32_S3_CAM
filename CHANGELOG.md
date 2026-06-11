@@ -6,11 +6,36 @@
 
 ## [未发布]
 
-### 新增
+### 新增 — WiFi 可选支持（ESP32-C6 SDIO 协处理器）
+
+- `main/network/wifi_manager.c/.h`：WiFi STA 连接封装，`#ifdef CONFIG_DISP_ENABLE_WIFI` 保护，关闭时零开销
+- `Kconfig.projbuild`：新增 `WiFi (optional)` 菜单，包含 `DISP_ENABLE_WIFI`、SSID、密码、最大重连次数配置项
+- `sdkconfig.defaults`：`CONFIG_DISP_ENABLE_WIFI=n`（默认关闭）、`CONFIG_SLAVE_IDF_TARGET_ESP32C6=y`、`CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n`
+- `experiments/wifi_only/`：独立最小 WiFi 验证工程，不含摄像头/SD 卡，用于隔离验证 C6 SDIO 通路
+- `main/idf_component.yml`：添加 `espressif/esp_wifi_remote: "0.14.*"` 和 `espressif/esp_hosted: "1.4.*"`
+
+### 变更 — SDMMC 槽位分离（SD 卡与 C6 SDIO 共存）
+
+- `main/drivers/sdcard.c`：SD 卡从 `SDMMC_HOST_SLOT_1`（默认）改为 `SDMMC_HOST_SLOT_0`，与 C6 SDIO（SLOT_1）分离
+
+  | 设备 | Slot | GPIO |
+  |------|------|------|
+  | C6 SDIO（esp_hosted） | SLOT_1（GPIO matrix） | CLK=18, CMD=19, D0-D3=14-17 |
+  | SD 卡 | SLOT_0（GPIO matrix） | CLK=43, CMD=44, D0-D3=39-42 |
+
+- `main/main.c`：重构启动顺序——采集阶段 WiFi 保持静默，`acq_manager_wait_done()` 返回后才调用 `wifi_manager_start()`，避免 esp_hosted SDIO 任务（优先级 23）在采集期间抢占 WriteTask（优先级 2）
+
+### 根本原因修正（SDIO 无法握手）
+
+之前版本错误地将 `H_SDMMC_HOST_SLOT` 从 SLOT_1 改为 SLOT_0，导致 esp_hosted 向 SD 卡物理槽发起 SDIO 握手（`send_op_cond` 超时 0x107）。正确结论：对 ESP32-P4，SLOT_1 = GPIO matrix，是 C6 SDIO 的正确槽位。已回滚，验证方式：官方 `03_wifistation` demo 直接成功获取 IP（192.168.31.75），C6 出厂固件无需重烧。
+
+### 新增 — YUV422 像素格式（前一开发周期）
+
 - `APP_PIXEL_FORMAT_YUV422 = 4`：在 `app_config.h` 中新增 YUV422 像素格式枚举值（YUYV 排列，16 bpp）
 - `debug_dump_yuv422_first_frame()`：roi_process_task.c 中首帧调试函数，启动后自动将 Y 通道以 PGM 格式保存到 `/sdcard/y_debug.pgm`，并将前 32 字节 raw 数据打印到串口，用于验证 YUYV/UYVY 字节序
 
-### 变更
+### 变更 — YUV422 像素格式
+
 - **ISP 输出格式**：从 `RGB565` 切换为 `YUV422 (YUYV)`
   - CSI 控制器输出：`CAM_CTLR_COLOR_RGB565` → `CAM_CTLR_COLOR_YUV422`
   - ISP 处理器输出：`ISP_COLOR_RGB565` → `ISP_COLOR_YUV422`
@@ -18,7 +43,7 @@
 - **ROI 灰度提取**：`roi_tracker.c` 中 `sample_luma()` 和 `track_one_roi()` 新增 YUV422 分支，直接从 YUYV 流读取 Y 字节（偏移 `x*2`），不再做 BT.601 加权运算
 - `p4_camera.c` 就绪日志增加像素格式 id 和帧缓冲总字节数输出
 
-### 性能对比（1280×960 @30 fps）
+### 性能对比（1280×960 @30 fps，YUV422 vs RGB565）
 
 | 指标 | RGB565 版本 | YUV422 版本 | 变化 |
 |------|------------|------------|------|

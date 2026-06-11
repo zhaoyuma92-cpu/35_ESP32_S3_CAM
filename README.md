@@ -60,13 +60,47 @@ t1_valid, t1_cx_px, t1_cy_px, t1_dx_px, t1_dy_px, t1_threshold, t1_pixels, t1_qu
 
 质心坐标和位移以 Q8 定点数存储，输出为十进制像素值。
 
+## SDMMC 槽位分工
+
+ESP32-P4 有两个独立的 SDMMC 控制器，本项目将它们分配给不同设备：
+
+| 设备 | SDMMC Slot | GPIO | 说明 |
+|------|-----------|------|------|
+| ESP32-C6 WiFi（esp_hosted） | **SLOT_1**（GPIO matrix） | CLK=18, CMD=19, D0-D3=14-17, RST=54 | esp_hosted 默认值，不需要修改 |
+| SD 卡 | **SLOT_0**（GPIO matrix） | CLK=43, CMD=44, D0-D3=39-42 | `sdcard.c` 中显式设置 SLOT_0 |
+
+两个 slot 相互独立，可以同时初始化而不冲突。
+
+## WiFi 可选功能
+
+WiFi 由板载 ESP32-C6 协处理器通过 SDIO 提供，默认**关闭**，不影响 30fps 采集性能。
+
+### 开启 WiFi
+
+在 `sdkconfig.defaults` 中修改一行：
+
+```
+CONFIG_DISP_ENABLE_WIFI=y
+```
+
+或通过 `idf.py menuconfig → "WiFi (optional)"` 配置。
+
+### 启动顺序
+
+WiFi 连接在采集完成后才启动，避免 esp_hosted 后台任务（优先级 23）在采集期间抢占 WriteTask（优先级 2）：
+
+```
+boot → SD 卡挂载(SLOT_0) → 相机初始化 → 采集(30fps CSV) → [采集完成] → WiFi连接(SLOT_1)
+```
+
 ## 重要文件说明
 
 | 文件 | 作用 |
 |------|------|
 | `main/board/board_config.h` | GPIO、摄像头模式、LDO 通道等硬件常量 |
 | `main/drivers/p4_camera.c` | OV5647 MIPI-CSI 初始化和帧采集 |
-| `main/drivers/sdcard.c` | SDMMC 4-bit 挂载（片内 LDO4 供电） |
+| `main/drivers/sdcard.c` | SDMMC 4-bit 挂载（SLOT_0，片内 LDO4 供电） |
+| `main/network/wifi_manager.c` | WiFi STA 连接封装（`CONFIG_DISP_ENABLE_WIFI` 保护） |
 | `main/vision/roi_tracker.c` | 单 ROI 阈值分割 + 质心计算 |
 | `main/acquisition/camera_capture_task.c` | 摄像头帧 → frame_queue |
 | `main/acquisition/roi_process_task.c` | frame_queue → batch_queue |
@@ -74,6 +108,7 @@ t1_valid, t1_cx_px, t1_cy_px, t1_dx_px, t1_dy_px, t1_threshold, t1_pixels, t1_qu
 | `main/acquisition/timing.h` | 共用 min/avg/max 计时统计工具 |
 | `main/storage/csv_writer.c` | FATFS CSV 写入封装 |
 | `main/config/app_config.c` | 默认 ROI 配置和运行参数 |
+| `experiments/wifi_only/` | 独立 WiFi 最小验证工程（不含摄像头/SD 卡） |
 
 ## 编译和烧录
 
@@ -106,5 +141,6 @@ idf.py -p COM8 monitor
 ## 已知限制
 
 - ROI 坐标为调试默认值，需针对实际目标位置重新标定。
-- 无实时主机输出（UART/以太网/HTTP），当前仅支持 SD 卡写入。
+- WiFi 支持已集成（`CONFIG_DISP_ENABLE_WIFI=y`），但 HTTP 服务器和数据上传尚未实现。
 - PWDN/RESET/XCLK 不由软件控制，硬件已将其保持在非激活状态。
+- SD 卡与 C6 SDIO 同时运行时的长时间稳定性尚未全面测试（槽位分离后理论上无冲突）。

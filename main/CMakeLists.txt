@@ -12,6 +12,7 @@ idf_component_register(
         "acquisition/roi_process_task.c"
         "acquisition/sdcard_write_task.c"
         "storage/csv_writer.c"
+        "network/wifi_manager.c"
     INCLUDE_DIRS
         "."
         "board"
@@ -21,6 +22,7 @@ idf_component_register(
         "vision"
         "acquisition"
         "storage"
+        "network"
     REQUIRES
         esp_timer
         heap
@@ -33,4 +35,10 @@ idf_component_register(
         espressif__esp_sccb_intf
         sdmmc
         fatfs
+        nvs_flash
+        esp_wifi
+        esp_netif
+        esp_event
+        espressif__esp_wifi_remote
+        espressif__esp_hosted
 )
