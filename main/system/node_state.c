@@ -19,14 +19,14 @@ node_state_t node_state_get(void)
 const char *node_state_to_string(node_state_t state)
 {
     switch (state) {
-    case NODE_BOOT: return "BOOT";
-    case NODE_CAMERA_INIT: return "CAMERA_INIT";
-    case NODE_IDLE: return "IDLE";
-    case NODE_RECORDING: return "RECORDING";
-    case NODE_FLUSHING: return "FLUSHING";
-    case NODE_FINISHED: return "FINISHED";
-    case NODE_STOPPED: return "STOPPED";
-    case NODE_ERROR: return "ERROR";
-    default: return "UNKNOWN";
+    case NODE_BOOT: return "NODE_BOOT";
+    case NODE_CAMERA_INIT: return "NODE_CAMERA_INIT";
+    case NODE_IDLE: return "NODE_IDLE";
+    case NODE_RECORDING: return "NODE_RECORDING";
+    case NODE_FLUSHING: return "NODE_FLUSHING";
+    case NODE_FINISHED: return "NODE_FINISHED";
+    case NODE_STOPPED: return "NODE_STOPPED";
+    case NODE_ERROR: return "NODE_ERROR";
+    default: return "NODE_UNKNOWN";
     }
 }

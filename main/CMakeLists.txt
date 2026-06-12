@@ -12,7 +12,11 @@ idf_component_register(
         "acquisition/roi_process_task.c"
         "acquisition/sdcard_write_task.c"
         "storage/csv_writer.c"
+        "storage/file_manager.c"
         "network/wifi_manager.c"
+        "network/http_server.c"
+        "network/http_api.c"
+        "network/udp_discovery.c"
     INCLUDE_DIRS
         "."
         "board"
@@ -39,6 +43,9 @@ idf_component_register(
         esp_wifi
         esp_netif
         esp_event
+        esp_http_server
+        json
+        lwip
         espressif__esp_wifi_remote
         espressif__esp_hosted
 )

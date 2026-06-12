@@ -8,6 +8,7 @@ void app_context_init(void)
 {
     memset(&s_ctx, 0, sizeof(s_ctx));
     app_config_load_defaults(&s_ctx.config);
+    s_ctx.start_trigger_sem = xSemaphoreCreateBinary();
 }
 
 app_context_t *app_context_get(void)

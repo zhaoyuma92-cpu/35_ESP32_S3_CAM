@@ -32,6 +32,5 @@
 #include "sdcard_write_task.h"
 #include "csv_writer.h"
 
-#define FIRMWARE_VERSION "v0.1.0"
 
 #endif

@@ -23,10 +23,11 @@ config DISP_FAKE_FRAME_HEIGHT
         Height of the synthetic frame.
 
 config DISP_AUTOSTART
-    bool "Start acquisition automatically at boot"
-    default y
+    bool "Start acquisition automatically at boot (legacy)"
+    default n
     help
-        Useful for early bring-up before HTTP/master control is added.
+        Legacy one-shot mode. Disabled now that the node uses an HTTP-triggered
+        loop. Enable only for standalone bring-up testing without WiFi.
 
 config DISP_OUTPUT_PATH
     string "CSV output path"
@@ -41,11 +42,11 @@ menu "WiFi (optional)"
 
 config DISP_ENABLE_WIFI
     bool "Enable WiFi via onboard ESP32-C6 (SDIO)"
-    default n
+    default y
     help
         Enables esp_hosted + esp_wifi_remote to connect the ESP32-C6 coprocessor
-        to WiFi. When disabled, no SDIO init is performed and the 30fps pipeline
-        is unaffected.
+        to WiFi. Required for HTTP API and UDP discovery. When disabled the node
+        still runs but can only be triggered via DISP_AUTOSTART.
 
 config DISP_WIFI_SSID
     string "WiFi SSID (2.4 GHz)"
