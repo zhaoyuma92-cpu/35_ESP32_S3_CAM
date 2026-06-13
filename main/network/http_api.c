@@ -9,6 +9,7 @@
 #include <sys/time.h>
 
 #include "cJSON.h"
+#include "driver/jpeg_encode.h"
 #include "esp_check.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -18,6 +19,7 @@
 #include "file_manager.h"
 #include "http_server.h"
 #include "node_state.h"
+#include "p4_camera.h"
 #include "wifi_manager.h"
 
 #define DOWNLOAD_CHUNK_SIZE 4096
@@ -75,6 +77,7 @@ static esp_err_t handle_root(httpd_req_t *req)
              "<p>node: %.15s<br>test: %.31s<br>state: %s<br>ip: %s</p>"
              "<a href='/api/status'>/api/status</a>"
              "<a href='/api/config'>/api/config</a>"
+             "<a href='/api/snapshot.jpg'>/api/snapshot.jpg (ROI calibration)</a>"
              "<a href='/api/files'>/api/files</a>"
              "<a href='/api/start'>/api/start</a>"
              "<a href='/api/start-offline'>/api/start-offline</a>"
@@ -237,14 +240,19 @@ static esp_err_t handle_post_config(httpd_req_t *req)
             roi_config_t *r = &next.roi[i];
             item = cJSON_GetObjectItemCaseSensitive(jr, "enabled");
             if (cJSON_IsBool(item)) r->enabled = cJSON_IsTrue(item);
+            bool coord_updated = false;
             item = cJSON_GetObjectItemCaseSensitive(jr, "x1");
-            if (cJSON_IsNumber(item)) r->x1 = (uint16_t)item->valuedouble;
+            if (cJSON_IsNumber(item)) { r->x1 = (uint16_t)item->valuedouble; coord_updated = true; }
             item = cJSON_GetObjectItemCaseSensitive(jr, "y1");
-            if (cJSON_IsNumber(item)) r->y1 = (uint16_t)item->valuedouble;
+            if (cJSON_IsNumber(item)) { r->y1 = (uint16_t)item->valuedouble; coord_updated = true; }
             item = cJSON_GetObjectItemCaseSensitive(jr, "x2");
-            if (cJSON_IsNumber(item)) r->x2 = (uint16_t)item->valuedouble;
+            if (cJSON_IsNumber(item)) { r->x2 = (uint16_t)item->valuedouble; coord_updated = true; }
             item = cJSON_GetObjectItemCaseSensitive(jr, "y2");
-            if (cJSON_IsNumber(item)) r->y2 = (uint16_t)item->valuedouble;
+            if (cJSON_IsNumber(item)) { r->y2 = (uint16_t)item->valuedouble; coord_updated = true; }
+            if (coord_updated) {
+                r->ref_x_q8 = (int32_t)((r->x1 + r->x2) / 2) << 8;
+                r->ref_y_q8 = (int32_t)((r->y1 + r->y2) / 2) << 8;
+            }
             item = cJSON_GetObjectItemCaseSensitive(jr, "threshold");
             if (cJSON_IsNumber(item)) r->threshold = (uint8_t)item->valuedouble;
             item = cJSON_GetObjectItemCaseSensitive(jr, "threshold_ratio_percent");
@@ -503,6 +511,98 @@ static esp_err_t handle_time(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* GET /api/snapshot.jpg — single-frame JPEG for ROI calibration.
+ * Only allowed in NODE_IDLE / NODE_FINISHED / NODE_STOPPED.
+ * Returns 503 if acquisition is in progress. */
+static esp_err_t handle_snapshot(httpd_req_t *req)
+{
+    node_state_t state = node_state_get();
+    if (state == NODE_RECORDING || state == NODE_FLUSHING) {
+        httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_sendstr(req, "busy: acquisition in progress");
+        return ESP_FAIL;
+    }
+
+    /* Grab one frame from the ISP output queue */
+    p4_camera_frame_t frame = {0};
+    esp_err_t err = p4_camera_get_frame(&frame, pdMS_TO_TICKS(500));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "snapshot: frame timeout");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "frame timeout");
+        return ESP_FAIL;
+    }
+
+    /* Allocate output buffer (must be DMA-accessible; ~512 KB is plenty for Q=65) */
+    size_t out_alloc = 0;
+    const jpeg_encode_memory_alloc_cfg_t out_mem = {
+        .buffer_direction = JPEG_ENC_ALLOC_OUTPUT_BUFFER
+    };
+    uint8_t *jpeg_buf = jpeg_alloc_encoder_mem(512 * 1024, &out_mem, &out_alloc);
+    if (!jpeg_buf) {
+        p4_camera_return_frame(&frame);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory for JPEG");
+        return ESP_FAIL;
+    }
+
+    /* Create hardware JPEG encoder engine */
+    jpeg_encoder_handle_t enc = NULL;
+    const jpeg_encode_engine_cfg_t eng_cfg = { .timeout_ms = 3000, .intr_priority = 0 };
+    err = jpeg_new_encoder_engine(&eng_cfg, &enc);
+    if (err != ESP_OK) {
+        free(jpeg_buf);
+        p4_camera_return_frame(&frame);
+        ESP_LOGW(TAG, "snapshot: jpeg_new_encoder_engine: %s", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "jpeg engine failed");
+        return ESP_FAIL;
+    }
+
+    /* Camera ISP outputs YUYV (YUV422). JPEG_ENCODE_IN_FORMAT_YUV422 is
+     * available on all P4 silicon revisions including v1.3. */
+    const jpeg_encode_cfg_t enc_cfg = {
+        .src_type      = JPEG_ENCODE_IN_FORMAT_YUV422,
+        .sub_sample    = JPEG_DOWN_SAMPLING_YUV422,
+        .image_quality = 65,
+        .width         = frame.width,
+        .height        = frame.height,
+    };
+    uint32_t jpeg_len = 0;
+    err = jpeg_encoder_process(enc, &enc_cfg,
+                               frame.data, (uint32_t)frame.len,
+                               jpeg_buf, (uint32_t)out_alloc,
+                               &jpeg_len);
+    jpeg_del_encoder_engine(enc);
+    p4_camera_return_frame(&frame);
+
+    if (err != ESP_OK || jpeg_len == 0) {
+        ESP_LOGW(TAG, "snapshot: encode failed: %s", esp_err_to_name(err));
+        free(jpeg_buf);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "encode failed");
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "snapshot: %"PRIu16"x%"PRIu16" -> %"PRIu32" B JPEG",
+             frame.width, frame.height, jpeg_len);
+
+    httpd_resp_set_type(req, "image/jpeg");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store");
+
+    const size_t CHUNK = 4096;
+    size_t sent = 0;
+    while (sent < jpeg_len && err == ESP_OK) {
+        size_t n = jpeg_len - sent;
+        if (n > CHUNK) n = CHUNK;
+        err = httpd_resp_send_chunk(req, (const char *)(jpeg_buf + sent), (ssize_t)n);
+        sent += n;
+    }
+    if (err == ESP_OK) {
+        httpd_resp_send_chunk(req, NULL, 0);
+    }
+    free(jpeg_buf);
+    return err;
+}
+
 esp_err_t http_api_register(void *server)
 {
     httpd_handle_t srv = (httpd_handle_t)server;
@@ -511,6 +611,7 @@ esp_err_t http_api_register(void *server)
         { .uri = "/api/status", .method = HTTP_GET, .handler = handle_status },
         { .uri = "/api/config", .method = HTTP_GET, .handler = handle_get_config },
         { .uri = "/api/config", .method = HTTP_POST, .handler = handle_post_config },
+        { .uri = "/api/snapshot.jpg", .method = HTTP_GET, .handler = handle_snapshot },
         { .uri = "/api/start", .method = HTTP_GET, .handler = handle_start },
         { .uri = "/api/start-offline", .method = HTTP_GET, .handler = handle_start_offline },
         { .uri = "/api/stop", .method = HTTP_GET, .handler = handle_stop },

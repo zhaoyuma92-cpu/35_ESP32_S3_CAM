@@ -8,18 +8,13 @@
 
 static const char *TAG = "roi_task";
 
-/* Dump first frame Y-channel to /sdcard/y_debug.pgm for byte-order verification.
- * Runs once; YUYV assumes Y at even bytes.  If PGM looks inverted/wrong, swap
- * the Y-byte offset in roi_tracker.c from [x*2] to [x*2+1] (UYVY layout). */
-static void debug_dump_yuv422_first_frame(const p4_camera_frame_t *frame)
+/* Log first-frame raw bytes to UART for byte-order verification (no SD I/O,
+ * no dropped frames). YUYV: Y at even offsets, U/V at odd offsets. */
+static void debug_log_yuv422_first_frame(const p4_camera_frame_t *frame)
 {
     static bool s_done = false;
-    if (s_done) {
-        return;
-    }
+    if (s_done) return;
     s_done = true;
-
-    /* Print first 32 raw bytes so byte order can be inspected in monitor */
     ESP_LOGI(TAG, "YUV422 first-frame raw bytes [0..31]:");
     for (int i = 0; i < 32 && i < (int)frame->len; i += 4) {
         ESP_LOGI(TAG, "  [%2d] %02X %02X %02X %02X  (Y0=%u U0=%u Y1=%u V0=%u)",
@@ -29,22 +24,6 @@ static void debug_dump_yuv422_first_frame(const p4_camera_frame_t *frame)
                  frame->data[i], frame->data[i+1],
                  frame->data[i+2], frame->data[i+3]);
     }
-
-    /* Write Y channel as PGM for viewing on PC */
-    FILE *f = fopen("/sdcard/y_debug.pgm", "wb");
-    if (!f) {
-        ESP_LOGW(TAG, "y_debug.pgm: open failed");
-        return;
-    }
-    fprintf(f, "P5\n%d %d\n255\n", frame->width, frame->height);
-    for (int y = 0; y < frame->height; y++) {
-        const uint8_t *row = frame->data + (size_t)y * frame->stride * 2U;
-        for (int x = 0; x < frame->width; x++) {
-            fputc(row[x * 2], f);  /* Y at even bytes (YUYV assumed) */
-        }
-    }
-    fclose(f);
-    ESP_LOGI(TAG, "saved /sdcard/y_debug.pgm (%dx%d)", frame->width, frame->height);
 }
 #define BATCH_BUFFER_COUNT 4
 static displacement_sample_t s_batch_buf[BATCH_BUFFER_COUNT][APP_MAX_BATCH_FRAMES];
@@ -106,7 +85,7 @@ void roi_process_task(void *arg)
         displacement_sample_t *sample = &cur_batch[pos];
         esp_err_t err = ESP_OK;
         if (msg.frame.pixel_format == APP_PIXEL_FORMAT_YUV422) {
-            debug_dump_yuv422_first_frame(&msg.frame);
+            debug_log_yuv422_first_frame(&msg.frame);
         }
         if (msg.frame.pixel_format == APP_PIXEL_FORMAT_RAW10) {
             int64_t t0 = esp_timer_get_time();

@@ -32,6 +32,7 @@ idf_component_register(
         heap
         esp_driver_cam
         esp_driver_isp
+        esp_driver_jpeg
         esp_driver_sdmmc
         driver
         esp_hw_support
