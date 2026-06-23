@@ -2,6 +2,10 @@ CONFIG_IDF_TARGET="esp32p4"
 # Real OV5647 MIPI-CSI camera backend (disable fake camera)
 CONFIG_DISP_FAKE_CAMERA=n
 
+# Disable SPI camera controller — project uses MIPI CSI (OV5647), not SPI.
+# CAM_CTRL_SPI_ENABLE=y + SPIRAM=y triggers spi_slave.c which uses IDF v5.4+ HAL APIs.
+CONFIG_CAM_CTRL_SPI_ENABLE=n
+
 # OV5647 sensor driver — must be explicitly enabled (default n in component)
 CONFIG_CAMERA_OV5647=y
 CONFIG_CAMERA_OV5647_AUTO_DETECT_MIPI_INTERFACE_SENSOR=y
