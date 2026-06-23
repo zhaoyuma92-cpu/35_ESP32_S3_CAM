@@ -1,5 +1,6 @@
 #include "http_api.h"
 
+#include <ctype.h>
 #include <dirent.h>
 #include <inttypes.h>
 #include <stdbool.h>
@@ -176,6 +177,18 @@ static esp_err_t handle_get_config(httpd_req_t *req)
     return ESP_OK;
 }
 
+// 严格校验 CAM_NODE_01~CAM_NODE_15：前缀 "CAM_NODE_"，后两位都是数字，值 01~15
+static bool check_node_id(const char *s)
+{
+    static const char PFX[] = "CAM_NODE_";
+    size_t pfx_len = sizeof(PFX) - 1;
+    if (!s || strlen(s) != pfx_len + 2) return false;
+    if (strncmp(s, PFX, pfx_len) != 0) return false;
+    if (!isdigit((unsigned char)s[pfx_len]) || !isdigit((unsigned char)s[pfx_len + 1])) return false;
+    int n = (s[pfx_len] - '0') * 10 + (s[pfx_len + 1] - '0');
+    return n >= 1 && n <= 15;
+}
+
 static void copy_json_string(cJSON *root, const char *key, char *dst, size_t dst_size)
 {
     cJSON *item = cJSON_GetObjectItemCaseSensitive(root, key);
@@ -214,7 +227,16 @@ static esp_err_t handle_post_config(httpd_req_t *req)
 
     app_context_t *ctx = app_context_get();
     app_config_t next = ctx->config;
-    copy_json_string(root, "node_id", next.node_id, sizeof(next.node_id));
+
+    cJSON *nid = cJSON_GetObjectItemCaseSensitive(root, "node_id");
+    if (cJSON_IsString(nid)) {
+        if (!check_node_id(nid->valuestring)) {
+            cJSON_Delete(root);
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "node_id: CAM_NODE_01..CAM_NODE_15");
+            return ESP_FAIL;
+        }
+        copy_json_string(root, "node_id", next.node_id, sizeof(next.node_id));
+    }
     copy_json_string(root, "test_id", next.test_id, sizeof(next.test_id));
 
     cJSON *item = cJSON_GetObjectItemCaseSensitive(root, "duration_s");
@@ -268,6 +290,7 @@ static esp_err_t handle_post_config(httpd_req_t *req)
 
     ctx->config = next;
     cJSON_Delete(root);
+    app_config_save_to_nvs(&ctx->config);
     return handle_get_config(req);
 }
 

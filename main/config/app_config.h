@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "esp_err.h"
 
 #define APP_NODE_ID_MAX_LEN      16
 #define APP_TEST_ID_MAX_LEN      32
@@ -54,8 +55,10 @@ typedef struct {
     roi_config_t roi[APP_TARGET_COUNT];
 } app_config_t;
 
-void app_config_load_defaults(app_config_t *cfg);
+void     app_config_load_defaults(app_config_t *cfg);
 uint32_t app_config_total_frames(const app_config_t *cfg);
 uint32_t app_config_frame_period_ms(const app_config_t *cfg);
+esp_err_t app_config_save_to_nvs(const app_config_t *cfg);
+esp_err_t app_config_load_from_nvs(app_config_t *cfg);
 
 #endif

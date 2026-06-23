@@ -2,7 +2,7 @@
 #define BOARD_CONFIG_H
 
 #define BOARD_NAME       "ESP32-P4-NANO"
-#define FIRMWARE_VERSION "v0.2.0"
+#define FIRMWARE_VERSION "v0.2.1"
 
 /* Temporary high-resolution frame-rate test.
  * The installed OV5647 driver does not expose 1080x960; the closest supported

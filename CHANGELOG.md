@@ -4,6 +4,26 @@
 
 ---
 
+## [v0.2.1] — 2026-06-16
+
+### 修复 — esp_wifi_remote Kconfig 构建失败
+
+- `CMakeLists.txt`：`esp_wifi_remote` 的 Kconfig 用 `orsource "./idf_v$ESP_IDF_VERSION/..."` 选择从机 target，但 ESP-IDF 的 kconfgen 从不导出 `ESP_IDF_VERSION` 这个环境变量（无论哪个 IDF 版本），导致 slave target 选项和所有 `WIFI_RMT_*` 选项从未被定义，报错 `#error "Unknown Slave Target"`。在 project 顶层 `CMakeLists.txt` 里手动 `set(ENV{ESP_IDF_VERSION} "5.5")`，在 IDF 的 project.cmake 之前注入，问题解决。
+
+### 变更 — 配置持久化 + node_id 命名统一
+
+- `main/config/app_config.c/h`：新增 `app_config_save_to_nvs()` / `app_config_load_from_nvs()`，node_id / test_id / duration_s / batch_frames / ROI 全部持久化到 NVS（命名空间 `cam_cfg`），重启后保留上次配置
+- `main/system/app_context.c`：`app_context_init()` 在加载默认值后调用 `app_config_load_from_nvs()`，覆盖为已保存的配置
+- `main/network/http_api.c`：`POST /api/config` 新增 `check_node_id()` 校验，**只接受** `CAM_NODE_01`~`CAM_NODE_15`（与项目34主控统一命名方案对齐），不合规则直接拒绝（400）
+- node_id 默认值从 `P4NODE01` 改为 `CAM_NODE_01`
+
+### 修复 — 编译警告
+
+- `main/drivers/p4_camera.c`：`esp_cam_sensor_format_t` 部分字段类型变化导致 `ESP_LOGI` 格式说明符不匹配，统一转 `uint32_t` 后用 `%"PRIu32"`
+- `sdkconfig.defaults`：显式关闭 `CONFIG_CAM_CTRL_SPI_ENABLE`（SPI 摄像头控制器 + PSRAM 同时启用会触发 `spi_slave.c` 里依赖 IDF v5.4+ HAL 的代码路径，本项目用 MIPI-CSI 不需要它）
+
+---
+
 ## [v0.2.0] — 2026-06-13
 
 将项目从"一次性采集"架构重构为**位移检测节点**，与项目 33/34 保持统一 HTTP + UDP 控制协议。
