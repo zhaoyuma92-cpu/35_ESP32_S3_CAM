@@ -362,9 +362,9 @@ static esp_err_t sensor_init(void)
     const esp_cam_sensor_format_t *selected = NULL;
     for (int i = 0; i < (int)fmt_arr.count; i++) {
         const esp_cam_sensor_format_t *fmt = &fmt_arr.format_array[i];
-        ESP_LOGI(TAG, "sensor fmt[%d]: %s %ux%u fps=%u mipi_clk=%" PRIu32 " lanes=%u",
-                 i, fmt->name, fmt->width, fmt->height, fmt->fps,
-                 fmt->mipi_info.mipi_clk, fmt->mipi_info.lane_num);
+        ESP_LOGI(TAG, "sensor fmt[%d]: %s %" PRIu32 "x%" PRIu32 " fps=%" PRIu32 " mipi_clk=%" PRIu32 " lanes=%" PRIu32,
+                 i, fmt->name, (uint32_t)fmt->width, (uint32_t)fmt->height, (uint32_t)fmt->fps,
+                 fmt->mipi_info.mipi_clk, (uint32_t)fmt->mipi_info.lane_num);
         if (strcmp(fmt_arr.format_array[i].name, BOARD_CAM_FORMAT_NAME) == 0) {
             selected = &fmt_arr.format_array[i];
         }
