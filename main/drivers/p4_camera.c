@@ -182,6 +182,7 @@ typedef struct {
     i2c_master_bus_handle_t  i2c_bus;
     esp_sccb_io_handle_t     sccb_io;
     volatile uint32_t     sequence;
+    volatile int64_t      ready_t_us;                /* esp_timer_get_time() at DMA-finished ISR */
 } real_cam_t;
 
 static real_cam_t s_cam;
@@ -252,7 +253,11 @@ static bool IRAM_ATTR on_trans_finished(esp_cam_ctlr_handle_t handle,
                                         esp_cam_ctlr_trans_t *trans,
                                         void *user_data)
 {
-    /* Record which buffer just finished and wake the consumer */
+    /* Record which buffer just finished and wake the consumer.
+     * Timestamp here, at the real DMA-finished instant — NOT later in
+     * p4_camera_get_frame(), which only runs after the consumer task wakes
+     * up and gets scheduled (subject to task-switch / other-task jitter). */
+    s_cam.ready_t_us = esp_timer_get_time();
     for (int i = 0; i < CAM_NUM_BUFS; i++) {
         if (trans->buffer == s_cam.bufs[i]) {
             s_cam.ready_idx = i;
@@ -529,7 +534,7 @@ esp_err_t p4_camera_get_frame(p4_camera_frame_t *frame, TickType_t timeout)
     frame->stride       = CAM_FRAME_W;
     frame->pixel_format = BOARD_CAM_PIXEL_FORMAT;
     frame->sequence     = s_cam.sequence;
-    frame->t_us         = esp_timer_get_time();
+    frame->t_us         = s_cam.ready_t_us;   /* DMA-finished instant, not "task woke up" instant */
     return ESP_OK;
 }
 

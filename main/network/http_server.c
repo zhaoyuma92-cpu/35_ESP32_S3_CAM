@@ -18,6 +18,7 @@ esp_err_t http_server_start(void)
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.stack_size = 8192;
     cfg.max_uri_handlers = 12;
+    cfg.core_id = 1;   // 留 core0 给采集任务（CameraTask），HTTP 别跟它抢核
 
     esp_err_t err = httpd_start(&s_server, &cfg);
     if (err != ESP_OK) {

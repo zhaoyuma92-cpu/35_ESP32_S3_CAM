@@ -4,6 +4,32 @@
 
 ---
 
+## [v0.2.2] — 2026-06-25
+
+### 变更 — 帧率调到 40fps，CSV 命名对齐项目33，定位并改善帧时间抖动
+
+- `board_config.h`：`BOARD_DEFAULT_FRAME_RATE_HZ` 30→40，`BOARD_CAM_OV5647_VTS_OVERRIDE`
+  1574→1180（理论~40.15fps）。30fps 时实测约38.4fps（dt_us均值26029.5us，23052帧/600.006s，
+  0丢帧，valid_mask全程15），跟传感器标称45fps→实测43.2fps的偏差比例一致，已知是
+  VTS理论值和实际响应的固定偏差，非算力瓶颈。
+- `acq_manager.c`：每次开始采集时按 `{test_id}_{node_id}_{时间戳}.csv` 生成唯一文件名
+  （`/sdcard/TEST01_CAM_NODE_01_20260624_142845.csv`），跟项目33(ADXL355节点)命名规则
+  统一，不再每次采集覆盖同一个 `displacement.csv`。
+- **定位帧时间抖动根因**：40fps下出现0.3~0.4ms级别的dt_us尖峰（14次>200us、7次>300us，
+  对比30fps只有6次>200us、0次>300us）。根因是 `t_us` 时间戳之前打在
+  `p4_camera_get_frame()` 里、消费者任务被ISR唤醒**之后**才记录，中间隔着任务调度延迟、
+  跟同核心的 `WriteTask` 抢核等不确定因素，不是相机/传感器本身不稳定。
+  - `p4_camera.c`：把时间戳挪到 `on_trans_finished()` ISR 里、DMA真正完成的瞬间打
+    （`s_cam.ready_t_us`），`p4_camera_get_frame()` 改为读取这个值，不再自己调
+    `esp_timer_get_time()`，从根上去掉调度延迟对时间戳的污染。
+  - `acq_manager.c`：`sdcard_write_task` 从 core0 挪到 core1（跟 `RoiTask` 共享），
+    core0 只留给 `CameraTask`。
+  - `http_server.c`：`httpd_config_t.core_id` 固定为 1，避免 HTTP 任务跟采集任务抢
+    core0。
+  - 以上改动均未触碰位移算法（ROI追踪/质心计算）本身。
+
+---
+
 ## [v0.2.1] — 2026-06-16
 
 ### 修复 — esp_wifi_remote Kconfig 构建失败

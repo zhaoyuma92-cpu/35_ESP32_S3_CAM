@@ -2,7 +2,7 @@
 #define BOARD_CONFIG_H
 
 #define BOARD_NAME       "ESP32-P4-NANO"
-#define FIRMWARE_VERSION "v0.2.1"
+#define FIRMWARE_VERSION "v0.2.2"
 
 /* Temporary high-resolution frame-rate test.
  * The installed OV5647 driver does not expose 1080x960; the closest supported
@@ -11,7 +11,7 @@
 #define BOARD_DEFAULT_FRAME_WIDTH    1280
 #define BOARD_DEFAULT_FRAME_HEIGHT    960
 #define BOARD_DEFAULT_FRAME_STRIDE   1280
-#define BOARD_DEFAULT_FRAME_RATE_HZ    30
+#define BOARD_DEFAULT_FRAME_RATE_HZ    40
 #define BOARD_CAM_BITS_PER_PIXEL       10
 #define BOARD_CAM_FRAME_BITS_PER_PIXEL 16
 
@@ -45,9 +45,13 @@
 
 /* 1280x960 RAW10 native timing: PCLK=88.333333 MHz, HTS=1796, VTS=1093.
  * The nominal 45 fps mode measured about 43.2 fps on this board, so tune VTS
- * from the measured 1640->28.79 fps result to target 30.0 fps.
+ * to target a slower rate. VTS = PCLK / (HTS * target_fps).
+ * 1574 -> ~30.0 fps (measured); 1229 -> measured 38.418 fps actual (dt_us~26029.5,
+ * 23052 frames over 600.006s, 0 dropped, valid_mask=15 throughout) — about 3.95%
+ * slower than the 40fps target, consistent with the same theoretical-vs-actual
+ * gap seen on the native 45fps mode. 1180 -> ~40.15 fps theoretical, next try.
  */
-#define BOARD_CAM_OV5647_VTS_OVERRIDE 1574
+#define BOARD_CAM_OV5647_VTS_OVERRIDE 1180
 
 /* SD card, SDMMC 4-bit mode */
 #define BOARD_SD_CLK_IO    43
