@@ -83,7 +83,7 @@ void sdcard_write_task(void *arg)
                                    ? (double)(last_t_us - first_t_us) / 1000000.0
                                    : 0.0;
             double fps = elapsed_s > 0.0 ? (double)(total_frames - 1) / elapsed_s : 0.0;
-            ESP_LOGI(TAG, "written batches=%" PRIu32 " frames=%" PRIu32
+            ESP_LOGD(TAG, "written batches=%" PRIu32 " frames=%" PRIu32
                           " fps=%.3f dropped=%" PRIu32
                           " capture_wait_us[min/avg/max]=%" PRIu32 "/%" PRIu32 "/%" PRIu32
                           " process_us[min/avg/max]=%" PRIu32 "/%" PRIu32 "/%" PRIu32

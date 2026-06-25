@@ -8,23 +8,6 @@
 
 static const char *TAG = "roi_task";
 
-/* Log first-frame raw bytes to UART for byte-order verification (no SD I/O,
- * no dropped frames). YUYV: Y at even offsets, U/V at odd offsets. */
-static void debug_log_yuv422_first_frame(const p4_camera_frame_t *frame)
-{
-    static bool s_done = false;
-    if (s_done) return;
-    s_done = true;
-    ESP_LOGI(TAG, "YUV422 first-frame raw bytes [0..31]:");
-    for (int i = 0; i < 32 && i < (int)frame->len; i += 4) {
-        ESP_LOGI(TAG, "  [%2d] %02X %02X %02X %02X  (Y0=%u U0=%u Y1=%u V0=%u)",
-                 i,
-                 frame->data[i], frame->data[i+1],
-                 frame->data[i+2], frame->data[i+3],
-                 frame->data[i], frame->data[i+1],
-                 frame->data[i+2], frame->data[i+3]);
-    }
-}
 #define BATCH_BUFFER_COUNT 4
 static displacement_sample_t s_batch_buf[BATCH_BUFFER_COUNT][APP_MAX_BATCH_FRAMES];
 
@@ -84,9 +67,6 @@ void roi_process_task(void *arg)
 
         displacement_sample_t *sample = &cur_batch[pos];
         esp_err_t err = ESP_OK;
-        if (msg.frame.pixel_format == APP_PIXEL_FORMAT_YUV422) {
-            debug_log_yuv422_first_frame(&msg.frame);
-        }
         if (msg.frame.pixel_format == APP_PIXEL_FORMAT_RAW10) {
             int64_t t0 = esp_timer_get_time();
             memset(sample, 0, sizeof(*sample));
