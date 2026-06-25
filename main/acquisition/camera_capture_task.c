@@ -27,6 +27,7 @@ void camera_capture_task(void *arg)
                   "s expected=%" PRIu32,
              cfg->frame_width, cfg->frame_height, cfg->frame_rate_hz,
              cfg->duration_s, expected_frames);
+    p4_camera_log_aec_state("capture_start");
 
     while ((esp_timer_get_time() - start_us) < duration_us) {
         if (ctx->stop_requested) {
@@ -70,10 +71,12 @@ void camera_capture_task(void *arg)
                           " frame_queue_send_us[min/avg/max]=%" PRIu32 "/%" PRIu32 "/%" PRIu32,
                      elapsed_s, captured_frames, fps, dropped_frames,
                      timing_min(&queue_send), timing_avg(&queue_send), queue_send.max);
+            p4_camera_log_aec_state("progress");
             next_log_us += 30000000LL;
         }
     }
 
+    p4_camera_log_aec_state("capture_end");
     camera_frame_msg_t end = {
         .end = true,
     };

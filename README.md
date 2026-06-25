@@ -6,11 +6,11 @@
 
 使用 Waveshare ESP32-P4-NANO 开发板和 OV5647 MIPI-CSI 摄像头，以 ≥ 30 fps 的帧率采集图像，对四个 ROI 目标进行质心追踪，将位移数据写入 SD 卡 CSV 文件，并通过 HTTP API 和 UDP 广播向上位机暴露控制接口，与项目 33/34 保持统一协议。
 
-## 当前状态（v0.2.2，已验证 2026-06-25）
+## 当前状态（v0.2.3，已验证 2026-06-25）
 
 | 项目 | 数值 |
 |------|------|
-| 固件版本 | v0.2.2 |
+| 固件版本 | v0.2.3 |
 | 开发板 | Waveshare ESP32-P4-NANO，ESP32-P4 rev v1.3 |
 | 摄像头 | RPi Camera(B)，OV5647 Rev 2.0 |
 | 传感器模式 | `1280×960 RAW10 binning @40fps`（VTS 覆盖，实测约38.4fps） |
@@ -95,7 +95,7 @@ curl http://192.168.31.75/download?file=displacement.csv -o data.csv
   "type": "displacement_node",
   "node_id": "CAM_NODE_01",
   "ip": "192.168.31.75",
-  "firmware": "v0.2.2",
+  "firmware": "v0.2.3",
   "state": "NODE_IDLE"
 }
 ```

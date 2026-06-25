@@ -120,6 +120,11 @@ void p4_camera_return_frame(const p4_camera_frame_t *frame)
     (void)frame;
 }
 
+void p4_camera_log_aec_state(const char *tag)
+{
+    (void)tag; /* no real sensor in fake-camera builds */
+}
+
 /* ============================================================
  * REAL CAMERA BACKEND — OV5647 via MIPI-CSI + ISP bypass
  * ============================================================
@@ -183,6 +188,7 @@ typedef struct {
     esp_sccb_io_handle_t     sccb_io;
     volatile uint32_t     sequence;
     volatile int64_t      ready_t_us;                /* esp_timer_get_time() at DMA-finished ISR */
+    esp_cam_sensor_device_t *sensor_dev;              /* kept for AEC/AGC register diagnostics */
 } real_cam_t;
 
 static real_cam_t s_cam;
@@ -206,6 +212,24 @@ static esp_err_t ov5647_read_reg(esp_cam_sensor_device_t *cam, uint16_t reg, uin
         *value = (uint8_t)regval.value;
     }
     return err;
+}
+
+void p4_camera_log_aec_state(const char *tag)
+{
+    if (!s_cam.sensor_dev) {
+        ESP_LOGW(TAG, "%s: sensor not ready, skip AEC read", tag);
+        return;
+    }
+    uint8_t e0 = 0, e1 = 0, e2 = 0, g0 = 0, g1 = 0;
+    ov5647_read_reg(s_cam.sensor_dev, 0x3500, &e0);
+    ov5647_read_reg(s_cam.sensor_dev, 0x3501, &e1);
+    ov5647_read_reg(s_cam.sensor_dev, 0x3502, &e2);
+    ov5647_read_reg(s_cam.sensor_dev, 0x350a, &g0);
+    ov5647_read_reg(s_cam.sensor_dev, 0x350b, &g1);
+    uint32_t exposure_lines = ((uint32_t)(e0 & 0x0f) << 16) | ((uint32_t)e1 << 8) | e2;
+    uint32_t gain = ((uint32_t)(g0 & 0x03) << 8) | g1;
+    ESP_LOGI(TAG, "%s: AEC exposure_lines=%" PRIu32 " (raw %02x %02x %02x) gain=%" PRIu32 " (raw %02x %02x)",
+             tag, exposure_lines, e0, e1, e2, gain, g0, g1);
 }
 
 static esp_err_t ov5647_apply_timing_override(esp_cam_sensor_device_t *cam)
@@ -360,6 +384,7 @@ static esp_err_t sensor_init(void)
                  BOARD_CAM_SCCB_SDA_IO, BOARD_CAM_SCCB_SCL_IO);
         return ESP_ERR_NOT_FOUND;
     }
+    s_cam.sensor_dev = cam;
 
     /* Select format */
     esp_cam_sensor_format_array_t fmt_arr = {0};
