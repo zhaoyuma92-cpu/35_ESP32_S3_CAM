@@ -143,6 +143,9 @@ static esp_err_t handle_get_config(httpd_req_t *req)
     send_cors_json(req);
     httpd_resp_sendstr_chunk(req, "{");
 
+    uint32_t exposure_lines = 0, exposure_gain = 0;
+    bool has_exposure = p4_camera_get_exposure(&exposure_lines, &exposure_gain) == ESP_OK;
+
     char buf[768];
     snprintf(buf, sizeof(buf),
              "\"type\":\"displacement_node\","
@@ -154,10 +157,13 @@ static esp_err_t handle_get_config(httpd_req_t *req)
              "\"duration_s\":%" PRIu32 ","
              "\"batch_frames\":%u,"
              "\"output_path\":\"%.127s\","
+             "\"exposure_lines\":%" PRIu32 ","
+             "\"exposure_gain\":%" PRIu32 ","
              "\"roi\":[",
              cfg->node_id, cfg->test_id, cfg->frame_width, cfg->frame_height,
              cfg->frame_rate_hz, cfg->duration_s, cfg->batch_frames,
-             cfg->output_path);
+             cfg->output_path,
+             has_exposure ? exposure_lines : 0, has_exposure ? exposure_gain : 0);
     httpd_resp_sendstr_chunk(req, buf);
 
     for (int i = 0; i < APP_TARGET_COUNT; i++) {
@@ -246,6 +252,19 @@ static esp_err_t handle_post_config(httpd_req_t *req)
     item = cJSON_GetObjectItemCaseSensitive(root, "batch_frames");
     if (cJSON_IsNumber(item) && item->valuedouble >= 1 && item->valuedouble <= APP_MAX_BATCH_FRAMES) {
         next.batch_frames = (uint16_t)item->valuedouble;
+    }
+
+    // 曝光是传感器实时硬件状态，不进 app_config_t 快照，收到就立即生效
+    cJSON *exp_item = cJSON_GetObjectItemCaseSensitive(root, "exposure_lines");
+    cJSON *gain_item = cJSON_GetObjectItemCaseSensitive(root, "exposure_gain");
+    if (cJSON_IsNumber(exp_item) && cJSON_IsNumber(gain_item)) {
+        esp_err_t exp_err = p4_camera_set_exposure((uint32_t)exp_item->valuedouble,
+                                                    (uint32_t)gain_item->valuedouble);
+        if (exp_err != ESP_OK) {
+            cJSON_Delete(root);
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid exposure_lines/exposure_gain");
+            return ESP_FAIL;
+        }
     }
 
     cJSON *roi = cJSON_GetObjectItemCaseSensitive(root, "roi");

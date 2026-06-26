@@ -125,6 +125,20 @@ void p4_camera_log_aec_state(const char *tag)
     (void)tag; /* no real sensor in fake-camera builds */
 }
 
+esp_err_t p4_camera_get_exposure(uint32_t *exposure_lines, uint32_t *gain)
+{
+    (void)exposure_lines;
+    (void)gain;
+    return ESP_ERR_NOT_SUPPORTED; /* no real sensor in fake-camera builds */
+}
+
+esp_err_t p4_camera_set_exposure(uint32_t exposure_lines, uint32_t gain)
+{
+    (void)exposure_lines;
+    (void)gain;
+    return ESP_ERR_NOT_SUPPORTED; /* no real sensor in fake-camera builds */
+}
+
 /* ============================================================
  * REAL CAMERA BACKEND — OV5647 via MIPI-CSI + ISP bypass
  * ============================================================
@@ -230,6 +244,53 @@ void p4_camera_log_aec_state(const char *tag)
     uint32_t gain = ((uint32_t)(g0 & 0x03) << 8) | g1;
     ESP_LOGI(TAG, "%s: AEC exposure_lines=%" PRIu32 " (raw %02x %02x %02x) gain=%" PRIu32 " (raw %02x %02x)",
              tag, exposure_lines, e0, e1, e2, gain, g0, g1);
+}
+
+esp_err_t p4_camera_get_exposure(uint32_t *exposure_lines, uint32_t *gain)
+{
+    if (!s_cam.sensor_dev) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint8_t e0 = 0, e1 = 0, e2 = 0, g0 = 0, g1 = 0;
+    ESP_RETURN_ON_ERROR(ov5647_read_reg(s_cam.sensor_dev, 0x3500, &e0), TAG, "read exp0 failed");
+    ESP_RETURN_ON_ERROR(ov5647_read_reg(s_cam.sensor_dev, 0x3501, &e1), TAG, "read exp1 failed");
+    ESP_RETURN_ON_ERROR(ov5647_read_reg(s_cam.sensor_dev, 0x3502, &e2), TAG, "read exp2 failed");
+    ESP_RETURN_ON_ERROR(ov5647_read_reg(s_cam.sensor_dev, 0x350a, &g0), TAG, "read gain0 failed");
+    ESP_RETURN_ON_ERROR(ov5647_read_reg(s_cam.sensor_dev, 0x350b, &g1), TAG, "read gain1 failed");
+    if (exposure_lines) {
+        *exposure_lines = ((uint32_t)(e0 & 0x0f) << 16) | ((uint32_t)e1 << 8) | e2;
+    }
+    if (gain) {
+        *gain = ((uint32_t)(g0 & 0x03) << 8) | g1;
+    }
+    return ESP_OK;
+}
+
+esp_err_t p4_camera_set_exposure(uint32_t exposure_lines, uint32_t gain)
+{
+    if (!s_cam.sensor_dev) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (exposure_lines > 0xFFFFF || gain > 0x3FF) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    /* 0x3503: AEC/AGC 手动模式开关 — bit1=AEC手动 bit0=AGC手动，都置1后
+     * 传感器内部自动曝光/自动增益停止调整，0x3500-02/0x350a-0b 写入的值
+     * 会被原样保持，不会再被AEC循环改写。 */
+    ESP_RETURN_ON_ERROR(ov5647_write_reg(s_cam.sensor_dev, 0x3503, 0x03),
+                        TAG, "write AEC manual mode failed");
+    ESP_RETURN_ON_ERROR(ov5647_write_reg(s_cam.sensor_dev, 0x3500, (uint8_t)((exposure_lines >> 16) & 0x0f)),
+                        TAG, "write exp0 failed");
+    ESP_RETURN_ON_ERROR(ov5647_write_reg(s_cam.sensor_dev, 0x3501, (uint8_t)((exposure_lines >> 8) & 0xff)),
+                        TAG, "write exp1 failed");
+    ESP_RETURN_ON_ERROR(ov5647_write_reg(s_cam.sensor_dev, 0x3502, (uint8_t)(exposure_lines & 0xff)),
+                        TAG, "write exp2 failed");
+    ESP_RETURN_ON_ERROR(ov5647_write_reg(s_cam.sensor_dev, 0x350a, (uint8_t)((gain >> 8) & 0x03)),
+                        TAG, "write gain0 failed");
+    ESP_RETURN_ON_ERROR(ov5647_write_reg(s_cam.sensor_dev, 0x350b, (uint8_t)(gain & 0xff)),
+                        TAG, "write gain1 failed");
+    ESP_LOGI(TAG, "exposure locked: exposure_lines=%" PRIu32 " gain=%" PRIu32, exposure_lines, gain);
+    return ESP_OK;
 }
 
 static esp_err_t ov5647_apply_timing_override(esp_cam_sensor_device_t *cam)
@@ -536,6 +597,17 @@ esp_err_t p4_camera_init(const app_config_t *cfg)
              CAM_FRAME_W, CAM_FRAME_H, BOARD_CAM_BITS_PER_PIXEL,
              (int)BOARD_CAM_PIXEL_FORMAT, BOARD_CAM_FRAME_BITS_PER_PIXEL,
              (unsigned)CAM_FRAME_SIZE, BOARD_DEFAULT_FRAME_RATE_HZ);
+
+    /* 让AEC/AGC在真实光照下跑2秒收敛，再读出收敛值并切手动模式锁死——
+     * 避免曝光在录制过程中被自动调整，引入额外的时序不确定性。每次开机
+     * 都重新走一遍这个流程（不持久化到NVS），贴合当时的实际光照。 */
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    uint32_t conv_exposure = 0, conv_gain = 0;
+    if (p4_camera_get_exposure(&conv_exposure, &conv_gain) == ESP_OK) {
+        p4_camera_set_exposure(conv_exposure, conv_gain);
+    } else {
+        ESP_LOGW(TAG, "exposure auto-converge read failed, AEC left running");
+    }
     return ESP_OK;
 }
 
